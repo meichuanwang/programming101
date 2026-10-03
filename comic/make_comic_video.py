@@ -3,11 +3,15 @@
 《陳美美的工地日常》EP.03 新人李不會 — 漫畫轉直式短影音 (1080x1920)
 
 鏡頭依序推進到每一格，停留時間依對白長度而定，最後拉回整頁。
-需求: python3, pillow, ffmpeg
+背景音樂由 bgm.py 合成 (原創，無版權問題)。
+需求: python3, pillow, numpy, ffmpeg
 執行: python3 comic/make_comic_video.py
 """
 import os
 import subprocess
+import tempfile
+
+import bgm
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
@@ -53,18 +57,19 @@ def zoom(r, k):
 
 
 def build_timeline():
-    """回傳 [(起始秒, 結束秒, 起始矩形, 結束矩形)]。"""
-    tl, t = [], 0.0
+    """回傳 ([(起始秒, 結束秒, 起始矩形, 結束矩形)], 總秒數, 每格停留開始秒數)。"""
+    tl, t, starts = [], 0.0, []
     tl.append((t, t + INTRO, FULL, FULL)); t += INTRO
     prev = FULL
     for rect, hold in PANELS:
         tl.append((t, t + MOVE, prev, rect)); t += MOVE
+        starts.append(t)
         # 停留時緩慢推近 4%，畫面不會死板
         tl.append((t, t + hold, rect, zoom(rect, 0.96))); t += hold
         prev = zoom(rect, 0.96)
     tl.append((t, t + 0.9, prev, FULL)); t += 0.9
     tl.append((t, t + OUTRO, FULL, FULL)); t += OUTRO
-    return tl, t
+    return tl, t, starts
 
 
 def main():
@@ -84,15 +89,19 @@ def main():
     header.text(((W - header.textlength(t2, font=f_sub)) / 2, 135), t2, font=f_sub, fill=(255, 255, 255))
 
     box_w, box_h, box_top = 1000, 1640, 210  # 漫畫顯示區
-    tl, total = build_timeline()
+    tl, total, starts = build_timeline()
+    tmp = tempfile.mkdtemp()
+    music = os.path.join(tmp, "bgm.wav")
+    # 「崩潰」那格 (第 10 格) 停下音樂放長號，片尾標題 (第 11 格) 前回到主旋律
+    bgm.render(music, total, break_at=starts[9], resume_at=starts[10] - MOVE)
 
     cmd = [
         "ffmpeg", "-v", "error", "-y",
         "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "%dx%d" % (W, H), "-r", str(FPS), "-i", "-",
-        "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",  # 無聲音軌，方便上傳各平台
+        "-i", music,
         "-map", "0:v", "-map", "1:a", "-shortest",
         "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", OUT,
+        "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", OUT,
     ]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     seg = 0
