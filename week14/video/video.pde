@@ -23,12 +23,9 @@ void draw() {
   //}
   image(movie, 0, 0, width, height);
   
-  // Show the current playback time and the total duration (in seconds)
-  float md = movie.duration();
-  float mt = movie.time();
-  fill(255);
-  textSize(24);
-  text(nf(mt, 0, 1) + " / " + nf(md, 0, 1) + " s", 40, 80);
+   float md = movie.duration();
+   float mt = movie.time();
+   text(mt, 40, 80);
 }
 
 void mousePressed(){
