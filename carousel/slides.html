@@ -1,0 +1,117 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
+
+<style>@font-face{font-family:"NotoTC";src:url(fonts/NotoSansTC-400.ttf);font-weight:100 549}@font-face{font-family:"NotoTC";src:url(fonts/NotoSansTC-700.ttf);font-weight:550 849}@font-face{font-family:"NotoTC";src:url(fonts/NotoSansTC-900.ttf);font-weight:850 1000}
+:root{--bg:#F6F2EA;--ink:#1B2433;--ink2:#4A5568;--muted:#7A8394;--navy:#1F3A5F;--accent:#D9622B;--accent-soft:#F7DCCB;--card:#FFFFFF;--line:#E4DDD0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#ccc;font-family:"NotoTC",sans-serif;color:var(--ink)}
+.slide{width:1080px;height:1350px;background:var(--bg);position:relative;padding:110px 96px 120px;display:flex;flex-direction:column;overflow:hidden;margin-bottom:20px}
+.tag{font-size:30px;font-weight:700;color:var(--accent);letter-spacing:2px;margin-bottom:28px}
+h1{font-size:92px;line-height:1.2;font-weight:900}
+h2{font-size:68px;line-height:1.25;font-weight:900;margin-bottom:48px}
+p{font-size:40px;line-height:1.7;color:var(--ink2)}
+.hl{color:var(--accent)}
+.foot{position:absolute;left:96px;right:96px;bottom:56px;display:flex;justify-content:space-between;font-size:26px;color:var(--muted)}
+.dots{display:flex;gap:10px;align-items:center}.dots i{width:12px;height:12px;border-radius:50%;background:var(--line);display:block}.dots i.on{background:var(--navy);width:32px;border-radius:6px}
+.card{background:var(--card);border-radius:28px;padding:48px 52px;box-shadow:0 2px 0 var(--line)}
+.big{font-size:200px;font-weight:900;line-height:1;color:var(--accent)}
+.eq{font-size:56px;font-weight:700;line-height:1.6}
+.swipe{margin-top:auto;font-size:34px;font-weight:700;color:var(--navy)}
+.quote{border-left:12px solid var(--accent);padding:28px 40px;background:var(--card);border-radius:0 24px 24px 0;font-size:46px;font-weight:700;line-height:1.6}
+/* chart */
+.chart{display:flex;flex-direction:column;gap:30px;margin-top:8px}
+.row{display:grid;grid-template-columns:120px 1fr;align-items:center;gap:24px}
+.row .lab{font-size:34px;font-weight:700;text-align:right;color:var(--ink)}
+.track{position:relative;height:84px}
+.bar{height:84px;background:var(--navy);border-radius:0 6px 6px 0;display:flex;align-items:center;justify-content:flex-end;padding-right:22px}
+.bar span{color:#fff;font-size:34px;font-weight:700;white-space:nowrap}
+.bar.last{background:var(--accent)}
+.axis{font-size:26px;color:var(--muted);margin-top:18px;padding-left:144px}
+.risk{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+.risk .card{padding:40px 40px}
+.risk .n{font-size:30px;font-weight:900;color:var(--accent)}
+.risk h3{font-size:46px;font-weight:900;margin:8px 0 14px}
+.risk p{font-size:32px;line-height:1.6}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+.cmp .card{text-align:center;padding:52px 30px}
+.cmp .k{font-size:32px;color:var(--ink2);font-weight:700}
+.cmp .v{font-size:110px;font-weight:900;line-height:1.15;margin:16px 0}
+.cmp .s{font-size:34px;color:var(--ink2)}
+.cmp .warn{border:5px solid var(--accent)}
+.check{list-style:none;display:flex;flex-direction:column;gap:26px}
+.check li{font-size:42px;font-weight:700;background:var(--card);border-radius:22px;padding:32px 40px;display:flex;gap:22px;align-items:flex-start;line-height:1.45}
+.check li b{color:#fff;background:var(--navy);border-radius:12px;font-size:32px;padding:4px 16px;flex:none;margin-top:4px}
+.check li.x b{background:var(--muted)}
+.dark{background:var(--navy);color:#fff}.dark p{color:#D6DEEA}.dark .foot{color:#9FB0C8}.dark .dots i{background:#3B5578}.dark .dots i.on{background:#fff}
+.disc{font-size:26px;line-height:1.6;color:#9FB0C8;margin-top:auto}
+</style></head><body>
+
+<!-- 1 -->
+<section class="slide"><div class="tag">被動收入迷思 ｜ 月配息基金</div>
+<h1>300 萬<br>每月領 <span class="hl">3 萬</span><br>真的可行嗎？</h1>
+<p style="margin-top:56px">每月有錢入帳很美好，<br>但「領到的錢」不等於「賺到的錢」。</p>
+<div class="card" style="margin-top:72px;display:flex;align-items:center;gap:40px;border-left:12px solid var(--accent)">
+<div style="font-size:120px;font-weight:900;color:var(--accent);line-height:1">12%</div>
+<div style="font-size:38px;font-weight:700;line-height:1.5">每年領走本金的比例<br><span style="color:var(--muted);font-weight:500;font-size:32px">是報酬，還是你自己的錢？</span></div></div>
+<div class="swipe">往右滑，一起算清楚 →</div></section>
+
+<!-- 2 -->
+<section class="slide"><div class="tag">先算數字</div><h2>每月 3 萬，<br>等於每年領走本金的</h2>
+<div class="big">12%</div>
+<div class="card" style="margin-top:60px"><div class="eq">3 萬 × 12 個月 = 36 萬<br>36 萬 ÷ 300 萬 = <span class="hl">12%</span></div></div>
+<p style="margin-top:48px">這是「提領率」，不是「報酬率」。<br>領到 12%，不代表賺到 12%。</p></section>
+
+<!-- 3 -->
+<section class="slide"><div class="tag">看清楚基金資料</div><h2>配息來源<br>可能為<span class="hl">本金</span></h2>
+<p>以「聯博－美國成長基金 AP（總報酬月配）級別美元」為例，基金資料就有這段提醒。</p>
+<div class="quote" style="margin-top:56px">意思是：你每月領到的錢，<br>可能有一部分是<br><span class="hl">你自己原本投入的錢。</span></div>
+<p style="margin-top:56px">要看配息後的淨值與含息總報酬，<br>不能只看配息率。</p></section>
+
+<!-- 4 -->
+<section class="slide"><div class="tag">試算 ｜ 300 萬、每月固定領 3 萬</div><h2>本金能撐多久？</h2><p style="font-size:30px;margin:-28px 0 28px;color:var(--muted)">左側為年化報酬率（扣費後）</p>
+<div class="chart">
+ <div class="row"><div class="lab">0%</div><div class="track"><div class="bar" style="width:33%"><span>8.3 年</span></div></div></div>
+ <div class="row"><div class="lab">6%</div><div class="track"><div class="bar" style="width:46%"><span>11.6 年</span></div></div></div>
+ <div class="row"><div class="lab">8%</div><div class="track"><div class="bar" style="width:55%"><span>13.8 年</span></div></div></div>
+ <div class="row"><div class="lab">10%</div><div class="track"><div class="bar" style="width:72%"><span>約 18 年</span></div></div></div>
+ <div class="row"><div class="lab">12%</div><div class="track"><div class="bar last" style="width:100%"><span>本金勉強不減少 →</span></div></div></div>
+</div>
+<p style="margin-top:56px;font-size:34px">要每月領 3 萬又不吃本金，<br>基金每年得<b style="color:var(--ink)">扣完費用後</b>穩定賺 12% 以上。</p>
+<p style="font-size:24px;color:var(--muted);margin-top:auto">＊概略試算，未計入匯率、通膨與費用變動。</p></section>
+
+<!-- 5 -->
+<section class="slide"><div class="tag">還沒算進去的</div><h2>4 個常被忽略的風險</h2>
+<div class="risk">
+ <div class="card"><div class="n">01</div><h3>費用</h3><p>內扣費用每年約 1.5%～2%，基金本身要賺到約 14% 才打平。</p></div>
+ <div class="card"><div class="n">02</div><h3>熊市</h3><p>大跌時照樣每月領錢，等於低點賣出，反彈也很難回本。</p></div>
+ <div class="card"><div class="n">03</div><h3>通膨</h3><p>20 年後的 3 萬，購買力約只剩現在的 6～7 成。</p></div>
+ <div class="card"><div class="n">04</div><h3>匯率</h3><p>美元級別，台幣升值時，換回來的錢就變少。</p></div>
+</div></section>
+
+<!-- 6 -->
+<section class="slide"><div class="tag">比一比</div><h2>常見的「4% 法則」<br>只能領多少？</h2>
+<div class="cmp">
+ <div class="card"><div class="k">4% 提領率</div><div class="v" style="color:var(--navy)">1 萬</div><div class="s">每月可領<br>（一年約 12 萬）</div></div>
+ <div class="card warn"><div class="k">12% 提領率</div><div class="v hl">3 萬</div><div class="s">每月可領<br>（一年 36 萬）</div></div>
+</div>
+<p style="margin-top:60px">同樣 300 萬，12% 的提領速度<br>是 4% 法則的 <b class="hl">3 倍</b>。</p></section>
+
+<!-- 7 -->
+<section class="slide"><div class="tag">建立被動收入前</div><h2>別只問「每月能領多少」</h2>
+<div class="quote" style="font-size:52px">領完之後，<br>我的資產還剩多少？</div>
+<ul class="check" style="margin-top:56px">
+ <li class="x"><b>少看</b>配息率有多高</li>
+ <li><b>多看</b>含息總報酬</li>
+ <li><b>多看</b>配息後的淨值走勢</li>
+ <li><b>多看</b>費用與匯率影響</li>
+</ul></section>
+
+<!-- 8 -->
+<section class="slide dark"><div class="tag" style="color:#F2A57F">換你說說看</div>
+<h1 style="font-size:84px">你會選擇<br>月配息基金，<br>還是自己<br>定期提領？</h1>
+<p style="margin-top:56px">歡迎留言分享你的想法 💬<br>覺得有幫助，記得收藏、分享給需要的人。</p>
+<div class="disc">本文僅為個人觀點與試算分享，不構成任何投資建議。基金過去績效不代表未來表現，投資前請詳閱公開說明書。</div></section>
+
+<script>
+document.querySelectorAll('.slide').forEach((s,i,all)=>{const f=document.createElement('div');f.className='foot';
+f.innerHTML=`<span>${i+1} / ${all.length}</span><span class="dots">${[...all].map((_,j)=>`<i class="${j===i?'on':''}"></i>`).join('')}</span>`;s.appendChild(f)});
+</script></body></html>
