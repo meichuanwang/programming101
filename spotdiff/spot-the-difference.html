@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>大家來找碴</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Noto+Sans+TC:wght@400;700;900&display=swap">
+<style>
+/* Layout: one centered column; setup card first, then a scoreboard bar over two side-by-side pictures that stack on phones. */
+:root {
+  --bg: #eef3fa;
+  --surface: #ffffff;
+  --ink: #1d2433;
+  --muted: #5b6578;
+  --line: #d9e1ee;
+  --accent: #ffb400;
+  --accent-ink: #3a2a00;
+  --p1: #2f6fed;
+  --p2: #e8455a;
+  --shadow: 0 1px 2px rgba(29, 36, 51, .06), 0 8px 24px rgba(29, 36, 51, .08);
+  --display: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --num: "Baloo 2", "Noto Sans TC", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111621; --surface: #1a2130; --ink: #eef2fa; --muted: #9aa5ba; --line: #2b3446;
+    --accent: #ffc53d; --accent-ink: #2a1f00; --p1: #6b9bff; --p2: #ff6f82;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111621; --surface: #1a2130; --ink: #eef2fa; --muted: #9aa5ba; --line: #2b3446;
+  --accent: #ffc53d; --accent-ink: #2a1f00; --p1: #6b9bff; --p2: #ff6f82;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .35);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.55; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 18px; }
+header.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+h1 { margin: 0; font-family: var(--display); font-weight: 900; font-size: clamp(26px, 5vw, 36px); letter-spacing: .06em; text-wrap: balance; }
+h1 .lens { background: linear-gradient(transparent 58%, var(--accent) 58%); padding: 0 2px; }
+.sub { color: var(--muted); font-size: 14px; margin: 0; }
+button { font: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible, .choice:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* setup */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 22px; }
+.setup { display: grid; gap: 22px; }
+.setup h2 { margin: 0 0 10px; font-size: 13px; letter-spacing: .14em; color: var(--muted); font-weight: 700; }
+.modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.choice { position: relative; display: flex; gap: 12px; align-items: flex-start; border: 2px solid var(--line); border-radius: 14px; padding: 14px 16px; cursor: pointer; background: var(--bg); min-width: 0; }
+.choice input { position: absolute; opacity: 0; pointer-events: none; }
+.choice:has(input:checked) { border-color: var(--accent); background: var(--surface); }
+.choice .ico { flex: none; width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); }
+.choice b { display: block; font-size: 17px; }
+.choice span.d { color: var(--muted); font-size: 14px; }
+.levels { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.levels .choice { flex-direction: column; gap: 2px; padding: 12px; }
+.levels .lv { font-family: var(--num); font-weight: 800; font-size: 22px; line-height: 1; }
+.levels .nm { font-weight: 700; }
+.levels .d { font-size: 13px; color: var(--muted); }
+.names { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+label.field { display: grid; gap: 6px; font-size: 14px; color: var(--muted); min-width: 0; }
+label.field input { font: inherit; color: var(--ink); background: var(--bg); border: 2px solid var(--line); border-radius: 10px; padding: 9px 12px; width: 100%; }
+label.field input:disabled { opacity: .6; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn { border: 0; border-radius: 12px; padding: 12px 22px; font-weight: 700; background: var(--line); color: var(--ink); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); font-size: 17px; padding: 13px 30px; }
+.btn.ghost { background: transparent; border: 2px solid var(--line); }
+.rules { margin: 0; padding-left: 20px; color: var(--muted); font-size: 14px; max-width: 65ch; }
+
+/* game */
+.bar { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: stretch; }
+.player { background: var(--surface); border: 2px solid var(--line); border-radius: 14px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; transition: border-color .2s, transform .2s; }
+.player .who { min-width: 0; }
+.player .nm { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player .tag { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+.player .sc { font-family: var(--num); font-weight: 800; font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
+.player.p1 .sc { color: var(--p1); }
+.player.p2 .sc { color: var(--p2); }
+.player.turn.p1 { border-color: var(--p1); }
+.player.turn.p2 { border-color: var(--p2); }
+.player.p2 { flex-direction: row-reverse; text-align: right; }
+.clock { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px 18px; text-align: center; min-width: 120px; }
+.clock .t { font-family: var(--num); font-weight: 800; font-size: 30px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.clock .t.low { color: var(--p2); }
+.clock .l { font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+.left-dots { display: flex; gap: 5px; justify-content: center; margin-top: 4px; }
+.left-dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+.left-dots i.f1 { background: var(--p1); }
+.left-dots i.f2 { background: var(--p2); }
+.boards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.board { margin: 0; min-width: 0; }
+.board figcaption { font-size: 13px; color: var(--muted); letter-spacing: .12em; margin-bottom: 6px; }
+.board canvas { display: block; width: 100%; max-width: 100%; aspect-ratio: 4 / 3; border-radius: 14px; border: 2px solid var(--line); cursor: crosshair; touch-action: manipulation; background: var(--surface); }
+.board.shake canvas { animation: shake .3s; }
+@keyframes shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+.gamefoot { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
+.status { color: var(--muted); font-size: 14px; }
+.toast { position: fixed; left: 50%; top: calc(16px + env(safe-area-inset-top, 0px)); transform: translate(-50%, -20px); opacity: 0; background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 999px; font-weight: 700; transition: opacity .2s, transform .2s; pointer-events: none; z-index: 20; max-width: calc(100% - 32px); text-align: center; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.overlay { position: fixed; inset: 0; background: rgba(10, 14, 24, .55); display: grid; place-items: center; padding: 16px; z-index: 30; }
+.result { width: min(420px, 100%); text-align: center; display: grid; gap: 14px; }
+.result h3 { margin: 0; font-size: 28px; font-weight: 900; }
+.result .final { display: flex; justify-content: center; align-items: baseline; gap: 14px; font-family: var(--num); font-weight: 800; font-size: 44px; }
+.result .final .a { color: var(--p1); }
+.result .final .b { color: var(--p2); }
+.result .final small { font-family: var(--body); font-size: 14px; color: var(--muted); font-weight: 400; display: block; }
+.result .record { color: var(--muted); font-size: 14px; }
+.result .actions { justify-content: center; }
+@media (max-width: 720px) {
+  .boards { grid-template-columns: minmax(0, 1fr); }
+  .levels { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .modes, .names { grid-template-columns: minmax(0, 1fr); }
+  .levels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bar { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .clock { grid-column: 1 / -1; grid-row: 1; }
+  .player .sc { font-size: 28px; }
+}
+@media (prefers-reduced-motion: reduce) { .board.shake canvas { animation: none; } .toast { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>大家來<span class="lens">找碴</span></h1>
+      <p class="sub">左右兩張圖有幾個地方不一樣，點左圖或右圖都算。</p>
+    </div>
+  </header>
+
+  <!-- 設定畫面 -->
+  <section id="setup" class="card setup" aria-label="遊戲設定">
+    <div>
+      <h2>選擇模式</h2>
+      <div class="modes">
+        <label class="choice">
+          <input type="radio" name="mode" id="mode-pvc" value="pvc" checked>
+          <span class="ico" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V3"/><circle cx="12" cy="3" r="1"/><circle cx="9" cy="13" r="1.3" fill="currentColor"/><circle cx="15" cy="13" r="1.3" fill="currentColor"/></svg>
+          </span>
+          <span><b>電腦與人</b><span class="d">跟電腦比賽，誰先找到就算誰的。點錯會停 1.5 秒。</span></span>
+        </label>
+        <label class="choice">
+          <input type="radio" name="mode" id="mode-pvp" value="pvp">
+          <span class="ico" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M14.5 14.2A6 6 0 0 1 22 20"/></svg>
+          </span>
+          <span><b>人與人</b><span class="d">兩人輪流找，找對可以繼續，找錯或 15 秒沒找到就換人。</span></span>
+        </label>
+      </div>
+    </div>
+    <div>
+      <h2>選擇等級</h2>
+      <div class="levels" id="levels"></div>
+    </div>
+    <div>
+      <h2>玩家名字</h2>
+      <div class="names">
+        <label class="field"><span><i class="dot" style="background:var(--p1)"></i>玩家 1</span><input id="p1name" type="text" maxlength="10" value="玩家 1"></label>
+        <label class="field"><span><i class="dot" style="background:var(--p2)"></i><span id="p2label">電腦</span></span><input id="p2name" type="text" maxlength="10" value="電腦" disabled></label>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="start">開始遊戲</button>
+      <ul class="rules">
+        <li>藍色圈是玩家 1 找到的，紅色圈是電腦或玩家 2 找到的。</li>
+        <li>時間到或全部找完就結算，找到比較多處的人獲勝。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 遊戲畫面 -->
+  <section id="game" hidden aria-label="遊戲進行中">
+    <div class="wrap" style="padding:0">
+      <div class="bar">
+        <div class="player p1" id="pl1"><div class="who"><div class="tag" id="tag1">玩家 1</div><div class="nm" id="nm1">玩家 1</div></div><div class="sc" id="sc1">0</div></div>
+        <div class="clock"><div class="l" id="clockLabel">剩餘時間</div><div class="t" id="clock">120</div><div class="left-dots" id="dots"></div></div>
+        <div class="player p2" id="pl2"><div class="who"><div class="tag" id="tag2">電腦</div><div class="nm" id="nm2">電腦</div></div><div class="sc" id="sc2">0</div></div>
+      </div>
+      <div class="boards">
+        <figure class="board" id="boardL"><figcaption>左圖</figcaption><canvas id="cvL" aria-label="左圖"></canvas></figure>
+        <figure class="board" id="boardR"><figcaption>右圖</figcaption><canvas id="cvR" aria-label="右圖"></canvas></figure>
+      </div>
+      <div class="gamefoot">
+        <span class="status" id="status">L1 入門 · 電腦與人</span>
+        <div class="actions">
+          <button class="btn ghost" id="restart">換一張圖重來</button>
+          <button class="btn ghost" id="menu">回選單</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="card result" role="dialog" aria-modal="true" aria-labelledby="resTitle">
+    <h3 id="resTitle">你贏了！</h3>
+    <div class="final"><div class="a"><span id="resA">0</span><small id="resAn">玩家 1</small></div><span style="color:var(--muted);font-size:28px">:</span><div class="b"><span id="resB">0</span><small id="resBn">電腦</small></div></div>
+    <div class="record" id="resRecord"></div>
+    <div class="actions">
+      <button class="btn primary" id="again">再玩一次</button>
+      <button class="btn" id="next">下一關</button>
+      <button class="btn ghost" id="back">回選單</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+const W = 480, H = 360;
+const $ = id => document.getElementById(id);
+
+/* ===== 等級設定 ===== */
+const LEVELS = [
+  { name: '入門', n: 3, objs: 11, time: 120, ai: 14, kinds: ['remove', 'add', 'color'], subtle: false, sizeF: 1.45, move: 30, desc: '3 處 · 120 秒' },
+  { name: '簡單', n: 4, objs: 14, time: 100, ai: 11, kinds: ['remove', 'add', 'color', 'size'], subtle: false, sizeF: 1.35, move: 26, desc: '4 處 · 100 秒' },
+  { name: '普通', n: 5, objs: 17, time: 90, ai: 9, kinds: ['remove', 'add', 'color', 'size', 'variant', 'move'], subtle: false, sizeF: 1.3, move: 22, desc: '5 處 · 90 秒' },
+  { name: '困難', n: 6, objs: 20, time: 80, ai: 7, kinds: ['remove', 'color', 'size', 'variant', 'move'], subtle: true, sizeF: 1.22, move: 16, desc: '6 處 · 80 秒' },
+  { name: '大師', n: 7, objs: 23, time: 70, ai: 5.5, kinds: ['color', 'variant', 'move', 'size', 'remove'], subtle: true, sizeF: 1.16, move: 12, small: true, desc: '7 處 · 70 秒' }
+];
+const TURN_TIME = 15, LOCK_MS = 1500;
+
+/* ===== 亂數 ===== */
+function mulberry(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+
+/* ===== 顏色工具 ===== */
+function hexToHsl(hex) {
+  const n = parseInt(hex.slice(1), 16), r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b); let h = 0, s = 0; const l = (mx + mn) / 2;
+  if (mx !== mn) { const d = mx - mn; s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn); h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; }
+  return [h, s * 100, l * 100];
+}
+function hslToHex(h, s, l) {
+  h = ((h % 360) + 360) % 360; s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+  const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))));
+  return '#' + [f(0), f(8), f(4)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+/* ===== 物件 ===== */
+const VIVID = ['#e84a5f', '#ff9f43', '#feca57', '#1dd1a1', '#54a0ff', '#8c5cf0', '#ff6b9d', '#00c2c7'];
+function ellipse(c, x, y, rx, ry, fill) { c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); c.fillStyle = fill; c.fill(); }
+function circle(c, x, y, r, fill) { ellipse(c, x, y, r, r, fill); }
+const TYPES = {
+  tree: {
+    zone: 'ground', w: 3, palette: ['#2e8b57', '#3cb371', '#6ab04c', '#1e7a5a', '#e58e26'], variants: [0, 1, 2, 3],
+    hit: o => ({ x: o.x, y: o.y - 40 * o.s, r: 38 * o.s }),
+    draw(c, o) {
+      const s = o.s, x = o.x, y = o.y;
+      c.fillStyle = '#8e5b3c'; c.fillRect(x - 5 * s, y - 32 * s, 10 * s, 32 * s);
+      circle(c, x - 16 * s, y - 38 * s, 18 * s, o.color); circle(c, x + 16 * s, y - 38 * s, 18 * s, o.color); circle(c, x, y - 52 * s, 25 * s, o.color);
+      c.globalAlpha = .18; circle(c, x - 6 * s, y - 60 * s, 10 * s, '#fff'); c.globalAlpha = 1;
+      [[-14, -40], [10, -54], [14, -34]].slice(0, o.v).forEach(([dx, dy]) => circle(c, x + dx * s, y + dy * s, 4.5 * s, '#e8343f'));
+    }
+  },
+  house: {
+    zone: 'ground', w: 2, palette: ['#f6e58d', '#ffbe76', '#dff9fb', '#f8a5c2', '#c7ecee'], roofs: ['#c0392b', '#2d3a8c', '#6d4c41'], variants: [1, 2],
+    hit: o => ({ x: o.x, y: o.y - 34 * o.s, r: 42 * o.s }),
+    draw(c, o) {
+      const s = o.s, x = o.x, y = o.y, w = 60 * s, h = 44 * s;
+      c.fillStyle = o.color; c.fillRect(x - w / 2, y - h, w, h);
+      c.beginPath(); c.moveTo(x - w / 2 - 7 * s, y - h); c.lineTo(x, y - h - 30 * s); c.lineTo(x + w / 2 + 7 * s, y - h); c.closePath(); c.fillStyle = o.roof || '#c0392b'; c.fill();
+      c.fillStyle = '#6b4226'; c.fillRect(x - 7 * s, y - 22 * s, 14 * s, 22 * s);
+      const win = wx => { c.fillStyle = '#ffffff'; c.fillRect(wx - 1.5 * s, y - 36 * s, 15 * s, 15 * s); c.fillStyle = '#74b9ff'; c.fillRect(wx, y - 34.5 * s, 12 * s, 12 * s); c.fillStyle = '#ffffff'; c.fillRect(wx + 5.3 * s, y - 34.5 * s, 1.4 * s, 12 * s); };
+      win(x - 25 * s); if (o.v >= 2) win(x + 13 * s);
+    }
+  },
+  flower: {
+    zone: 'ground', w: 4, palette: ['#e84a5f', '#ff9f43', '#8c5cf0', '#ff6b9d', '#54a0ff', '#feca57'], variants: [4, 5, 6],
+    hit: o => ({ x: o.x, y: o.y - 22 * o.s, r: 19 * o.s }),
+    draw(c, o) {
+      const s = o.s, x = o.x, y = o.y, cy = y - 28 * s;
+      c.strokeStyle = '#2f9e44'; c.lineWidth = 3 * s; c.beginPath(); c.moveTo(x, y); c.lineTo(x, cy); c.stroke();
+      ellipse(c, x + 6 * s, y - 10 * s, 6 * s, 3 * s, '#2f9e44');
+      for (let i = 0; i < o.v; i++) { const a = i / o.v * Math.PI * 2 - Math.PI / 2; ellipse(c, x + Math.cos(a) * 8 * s, cy + Math.sin(a) * 8 * s, 6.5 * s, 6.5 * s, o.color); }
+      circle(c, x, cy, 5 * s, '#ffd32a');
+    }
+  },
+  mushroom: {
+    zone: 'ground', w: 3, palette: ['#e84a5f', '#ff9f43', '#8c5cf0', '#54a0ff'], variants: [0, 2, 3, 4],
+    hit: o => ({ x: o.x, y: o.y - 14 * o.s, r: 20 * o.s }),
+    draw(c, o) {
+      const s = o.s, x = o.x, y = o.y;
+      c.fillStyle = '#f5e6c8'; c.fillRect(x - 6 * s, y - 15 * s, 12 * s, 15 * s);
+      c.beginPath(); c.ellipse(x, y - 14 * s, 19 * s, 15 * s, 0, Math.PI, 0); c.closePath(); c.fillStyle = o.color; c.fill();
+      [[-9, -20], [5, -24], [10, -17], [-2, -18]].slice(0, o.v).forEach(([dx, dy]) => circle(c, x + dx * s, y + dy * s, 3 * s, '#fff'));
+    }
+  },
+  rock: {
+    zone: 'ground', w: 2, palette: ['#95a5a6', '#7f8c8d', '#b2bec3', '#a3907a'],
+    hit: o => ({ x: o.x, y: o.y - 9 * o.s, r: 19 * o.s }),
+    draw(c, o) { const s = o.s; ellipse(c, o.x, o.y - 9 * s, 19 * s, 11 * s, o.color); c.globalAlpha = .35; ellipse(c, o.x - 6 * s, o.y - 13 * s, 7 * s, 3 * s, '#fff'); c.globalAlpha = 1; }
+  },
+  butterfly: {
+    zone: 'air', w: 2, palette: ['#ff6b9d', '#feca57', '#54a0ff', '#8c5cf0', '#ff9f43'], variants: [0, 1],
+    hit: o => ({ x: o.x, y: o.y, r: 17 * o.s }),
+    draw(c, o) {
+      const s = o.s, x = o.x, y = o.y;
+      ellipse(c, x - 8 * s, y - 5 * s, 9 * s, 7 * s, o.color); ellipse(c, x + 8 * s, y - 5 * s, 9 * s, 7 * s, o.color);
+      ellipse(c, x - 6 * s, y + 6 * s, 6 * s, 5 * s, o.color); ellipse(c, x + 6 * s, y + 6 * s, 6 * s, 5 * s, o.color);
+      if (o.v) { circle(c, x - 9 * s, y - 5 * s, 2.5 * s, '#fff'); circle(c, x + 9 * s, y - 5 * s, 2.5 * s, '#fff'); }
+      c.fillStyle = '#2d3436'; c.fillRect(x - 1.5 * s, y - 9 * s, 3 * s, 18 * s);
+    }
+  },
+  cloud: {
+    zone: 'sky', w: 3, palette: ['#ffffff', '#e3ecf5', '#ffeef5', '#eef0ff'], variants: [3, 4],
+    hit: o => ({ x: o.x, y: o.y, r: 33 * o.s }),
+    draw(c, o) {
+      const s = o.s, x = o.x, y = o.y;
+      ellipse(c, x - 18 * s, y + 4 * s, 16 * s, 11 * s, o.color); ellipse(c, x + 18 * s, y + 4 * s, 16 * s, 11 * s, o.color); ellipse(c, x, y - 2 * s, 20 * s, 15 * s, o.color);
+      if (o.v >= 4) ellipse(c, x + 8 * s, y - 12 * s, 11 * s, 9 * s, o.color);
+    }
+  },
+  sun: {
+    zone: 'sun', w: 1, palette: ['#feca57', '#ff9f43', '#ffd32a'], variants: [8, 10, 12],
+    hit: o => ({ x: o.x, y: o.y, r: 34 * o.s }),
+    draw(c, o) {
+      const s = o.s; c.strokeStyle = o.color; c.lineWidth = 3 * s; c.lineCap = 'round';
+      for (let i = 0; i < o.v; i++) { const a = i / o.v * Math.PI * 2; c.beginPath(); c.moveTo(o.x + Math.cos(a) * 26 * s, o.y + Math.sin(a) * 26 * s); c.lineTo(o.x + Math.cos(a) * 33 * s, o.y + Math.sin(a) * 33 * s); c.stroke(); }
+      circle(c, o.x, o.y, 20 * s, o.color);
+    }
+  },
+  balloon: {
+    zone: 'sky', w: 3, palette: VIVID,
+    hit: o => ({ x: o.x, y: o.y + 7 * o.s, r: 19 * o.s }),
+    draw(c, o) {
+      const s = o.s, x = o.x, y = o.y;
+      c.strokeStyle = '#636e72'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(x, y + 15 * s); c.quadraticCurveTo(x - 6 * s, y + 26 * s, x + 2 * s, y + 34 * s); c.stroke();
+      ellipse(c, x, y, 12 * s, 15 * s, o.color);
+      c.beginPath(); c.moveTo(x - 3 * s, y + 17 * s); c.lineTo(x + 3 * s, y + 17 * s); c.lineTo(x, y + 13 * s); c.fillStyle = o.color; c.fill();
+      c.globalAlpha = .35; ellipse(c, x - 4 * s, y - 6 * s, 3 * s, 5 * s, '#fff'); c.globalAlpha = 1;
+    }
+  },
+  bird: {
+    zone: 'sky', w: 3, palette: ['#2d3436', '#4b4b6b', '#7a3e3e'],
+    hit: o => ({ x: o.x, y: o.y - 3 * o.s, r: 15 * o.s }),
+    draw(c, o) {
+      const s = o.s; c.strokeStyle = o.color; c.lineWidth = 3 * s; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(o.x - 13 * s, o.y); c.quadraticCurveTo(o.x - 6 * s, o.y - 9 * s, o.x, o.y); c.quadraticCurveTo(o.x + 6 * s, o.y - 9 * s, o.x + 13 * s, o.y); c.stroke();
+    }
+  },
+  kite: {
+    zone: 'sky', w: 2, palette: VIVID, variants: [2, 3, 4],
+    hit: o => ({ x: o.x, y: o.y + 10 * o.s, r: 24 * o.s }),
+    draw(c, o) {
+      const s = o.s, x = o.x, y = o.y;
+      c.strokeStyle = '#636e72'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(x, y + 18 * s); c.bezierCurveTo(x + 10 * s, y + 26 * s, x - 10 * s, y + 32 * s, x + 4 * s, y + 40 * s); c.stroke();
+      c.beginPath(); c.moveTo(x, y - 18 * s); c.lineTo(x + 13 * s, y); c.lineTo(x, y + 18 * s); c.lineTo(x - 13 * s, y); c.closePath(); c.fillStyle = o.color; c.fill();
+      c.strokeStyle = 'rgba(255,255,255,.7)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(x, y - 18 * s); c.lineTo(x, y + 18 * s); c.moveTo(x - 13 * s, y); c.lineTo(x + 13 * s, y); c.stroke();
+      for (let i = 0; i < o.v; i++) { const ty = y + (24 + i * 6) * s, tx = x + (i % 2 ? -4 : 4) * s; c.beginPath(); c.moveTo(tx - 4 * s, ty - 3 * s); c.lineTo(tx + 4 * s, ty + 3 * s); c.lineTo(tx + 4 * s, ty - 3 * s); c.lineTo(tx - 4 * s, ty + 3 * s); c.closePath(); c.fillStyle = '#ff6b9d'; c.fill(); }
+    }
+  }
+};
+const TYPE_NAMES = Object.keys(TYPES);
+const hitOf = o => TYPES[o.type].hit(o);
+
+/* ===== 產生關卡 ===== */
+function generate(levelIdx, seed) {
+  const R = mulberry(seed), L = LEVELS[levelIdx];
+  const pick = a => a[Math.floor(R() * a.length)];
+  const objs = [];
+  const zoneY = z => z === 'sky' ? 34 + R() * 130 : z === 'sun' ? 40 + R() * 20 : z === 'air' ? 205 + R() * 85 : 240 + R() * 105;
+  const minS = L.small ? 0.7 : 0.85;
+  function place(type) {
+    const T = TYPES[type];
+    for (let k = 0; k < 90; k++) {
+      const o = { type, s: minS + R() * 0.35, x: 32 + R() * (W - 64), y: zoneY(T.zone), color: pick(T.palette), v: T.variants ? pick(T.variants) : 0 };
+      if (type === 'house') o.roof = pick(T.roofs);
+      if (type === 'sun') o.x = R() < .5 ? 50 + R() * 40 : W - 90 + R() * 40;
+      const h = hitOf(o);
+      if (h.x - h.r < 2 || h.x + h.r > W - 2 || h.y - h.r < 2 || h.y + h.r > H - 2) continue;
+      if (objs.every(p => { const q = hitOf(p); return Math.hypot(q.x - h.x, q.y - h.y) > q.r + h.r + 2; })) return o;
+    }
+    return null;
+  }
+  const bag = TYPE_NAMES.flatMap(t => Array(TYPES[t].w).fill(t));
+  let tries = 0, hasSun = false;
+  while (objs.length < L.objs && tries++ < 400) {
+    const t = pick(bag);
+    if (t === 'sun' && hasSun) continue;
+    const o = place(t); if (o) { objs.push(o); if (t === 'sun') hasSun = true; }
+  }
+  const left = objs.map(o => ({ ...o })), right = objs.map(o => ({ ...o }));
+  const used = new Set(), diffs = [];
+  const unionHit = i => {
+    const a = hitOf(left[i]), b = hitOf(right[i]), d = Math.hypot(a.x - b.x, a.y - b.y);
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, r: Math.max(a.r, b.r) + d / 2 };
+  };
+  for (let n = 0, guard = 0; n < L.n && guard < 200; guard++) {
+    const kind = pick(L.kinds), side = R() < .5 ? 'L' : 'R';
+    const mod = side === 'L' ? left : right, other = side === 'L' ? right : left;
+    if (kind === 'add') {
+      const t = pick(TYPE_NAMES.filter(t => t !== 'sun'));
+      const o = place(t); if (!o) continue;
+      objs.push(o); mod.push({ ...o }); other.push({ ...o, hidden: true });
+      diffs.push({ ...hitOf(o), kind }); n++; continue;
+    }
+    let cand = objs.map((_, i) => i).filter(i => i < left.length && !used.has(i) && !left[i].hidden && !right[i].hidden && !left[i].added);
+    if (kind === 'variant') cand = cand.filter(i => TYPES[objs[i].type].variants);
+    if (kind === 'color') cand = cand.filter(i => TYPES[objs[i].type].palette.length > 1);
+    if (L.small) { const sm = cand.filter(i => hitOf(objs[i]).r < 26); if (sm.length) cand = sm; }
+    if (!cand.length) continue;
+    const i = pick(cand), T = TYPES[objs[i].type], m = mod[i];
+    if (kind === 'remove') { m.hidden = true; diffs.push({ ...hitOf(other[i]), kind }); }
+    else if (kind === 'color') {
+      if (L.subtle && m.type !== 'cloud') {
+        const [h, s, l] = hexToHsl(m.color);
+        m.color = hslToHex(h + (R() < .5 ? -1 : 1) * (26 + R() * 10), Math.min(100, s + 5), Math.max(18, Math.min(82, l + (R() < .5 ? -7 : 7))));
+      } else m.color = pick(T.palette.filter(c => c !== m.color));
+      diffs.push({ ...unionHit(i), kind });
+    } else if (kind === 'size') {
+      m.s *= R() < .5 ? L.sizeF : 1 / L.sizeF; diffs.push({ ...unionHit(i), kind });
+    } else if (kind === 'variant') {
+      m.v = pick(T.variants.filter(v => v !== m.v)); diffs.push({ ...unionHit(i), kind });
+    } else if (kind === 'move') {
+      const dx = (R() < .5 ? -1 : 1) * L.move; m.x = Math.max(30, Math.min(W - 30, m.x + dx)); diffs.push({ ...unionHit(i), kind });
+    }
+    used.add(i); n++;
+  }
+  diffs.forEach(d => { d.r = Math.max(d.r, 16); });
+  const hills = [0, 1, 2].map(() => ({ x: R() * W, r: 120 + R() * 90 }));
+  return { left, right, diffs, hills };
+}
+
+/* ===== 畫圖 ===== */
+const dpr = Math.min(2, window.devicePixelRatio || 1);
+function makeCanvas() { const c = document.createElement('canvas'); c.width = W * dpr; c.height = H * dpr; return c; }
+function renderScene(list, hills) {
+  const cv = makeCanvas(), c = cv.getContext('2d'); c.scale(dpr, dpr);
+  const sky = c.createLinearGradient(0, 0, 0, 230); sky.addColorStop(0, '#9fd8ff'); sky.addColorStop(1, '#e6f6ff');
+  c.fillStyle = sky; c.fillRect(0, 0, W, H);
+  hills.forEach(h => ellipse(c, h.x, 236, h.r, 60, '#b6e3a0'));
+  const g = c.createLinearGradient(0, 220, 0, H); g.addColorStop(0, '#8fd16f'); g.addColorStop(1, '#6cbf55');
+  c.fillStyle = g; c.fillRect(0, 222, W, H - 222);
+  c.fillStyle = 'rgba(255,255,255,.18)'; c.fillRect(0, 222, W, 3);
+  list.filter(o => !o.hidden).slice().sort((a, b) => a.y - b.y).forEach(o => TYPES[o.type].draw(c, o));
+  return cv;
+}
+
+/* ===== 音效 ===== */
+let ac = null;
+function audioOn() { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ac = null; } } if (ac && ac.state === 'suspended') ac.resume(); }
+function beep(f, dur, type = 'sine', vol = .12, delay = 0, f2) {
+  if (!ac) return; const t = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur + .02);
+}
+const SND = {
+  good: () => { beep(880, .12, 'triangle'); beep(1320, .2, 'triangle', .12, .08); },
+  ai: () => { beep(520, .1, 'square', .05); beep(390, .16, 'square', .05, .08); },
+  bad: () => beep(180, .25, 'sawtooth', .07, 0, 110),
+  turn: () => beep(660, .12, 'sine', .08),
+  win: () => [523, 659, 784, 1047].forEach((f, i) => beep(f, .2, 'triangle', .12, i * .12)),
+  lose: () => [440, 392, 330].forEach((f, i) => beep(f, .25, 'triangle', .1, i * .16))
+};
+
+/* ===== 遊戲狀態 ===== */
+const cvs = { L: $('cvL'), R: $('cvR') };
+Object.values(cvs).forEach(c => { c.width = W * dpr; c.height = H * dpr; });
+const record = { a: 0, b: 0, tie: 0 };
+let G = null, COL = {};
+
+function readColors() { const cs = getComputedStyle(document.documentElement); COL = { p1: cs.getPropertyValue('--p1').trim() || '#2f6fed', p2: cs.getPropertyValue('--p2').trim() || '#e8455a' }; }
+
+function startGame(levelIdx) {
+  readColors();
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  const n1 = ($('p1name').value.trim() || '玩家 1'), n2 = mode === 'pvc' ? '電腦' : ($('p2name').value.trim() || '玩家 2');
+  if (G && (G.mode !== mode || G.names[0] !== n1 || G.names[1] !== n2)) { record.a = record.b = record.tie = 0; }
+  const seed = (Math.random() * 2 ** 31) | 0, L = LEVELS[levelIdx];
+  const scene = generate(levelIdx, seed);
+  const now = performance.now();
+  G = {
+    mode, level: levelIdx, names: [n1, n2], scores: [0, 0], turn: 0, scene,
+    off: { L: renderScene(scene.left, scene.hills), R: renderScene(scene.right, scene.hills) },
+    found: scene.diffs.map(() => null), foundAt: scene.diffs.map(() => 0),
+    timeLeft: L.time, turnLeft: TURN_TIME, running: true, ended: false, lockUntil: 0, marks: [], last: now,
+    ai: { next: now + L.ai * 1000 * (0.8 + Math.random() * 0.4), target: null, pos: { x: W / 2, y: H / 2 }, side: 'L' }
+  };
+  $('setup').hidden = true; $('game').hidden = false; $('overlay').hidden = true;
+  $('nm1').textContent = n1; $('nm2').textContent = n2;
+  $('tag1').textContent = mode === 'pvc' ? '你' : '玩家 1'; $('tag2').textContent = mode === 'pvc' ? '電腦' : '玩家 2';
+  $('clockLabel').textContent = mode === 'pvc' ? '剩餘時間' : n1 + ' 的回合';
+  $('status').textContent = `L${levelIdx + 1} ${L.name} · ${mode === 'pvc' ? '電腦與人' : '人與人'} · 共 ${scene.diffs.length} 處不同`;
+  $('dots').innerHTML = scene.diffs.map(() => '<i></i>').join('');
+  updateHud();
+  if (mode === 'pvp') toast(`${n1} 先開始`);
+}
+
+function updateHud() {
+  if (!G) return;
+  $('sc1').textContent = G.scores[0]; $('sc2').textContent = G.scores[1];
+  const t = Math.ceil(G.mode === 'pvc' ? G.timeLeft : G.turnLeft);
+  const clk = $('clock'); clk.textContent = Math.max(0, t); clk.classList.toggle('low', t <= (G.mode === 'pvc' ? 10 : 5) && G.running);
+  $('pl1').classList.toggle('turn', G.mode === 'pvp' && G.turn === 0 && G.running);
+  $('pl2').classList.toggle('turn', G.mode === 'pvp' && G.turn === 1 && G.running);
+  [...$('dots').children].forEach((d, i) => { d.className = G.found[i] === 0 ? 'f1' : G.found[i] === 1 ? 'f2' : ''; });
+  if (G.mode === 'pvp') $('clockLabel').textContent = G.running ? G.names[G.turn] + ' 的回合' : '結束';
+}
+
+let toastTimer = 0;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1400); }
+
+function markFound(i, p) {
+  G.found[i] = p; G.foundAt[i] = performance.now(); G.scores[p]++;
+  (G.mode === 'pvc' && p === 1) ? SND.ai() : SND.good();
+  if (G.ai.target === i) { G.ai.target = null; G.ai.next = performance.now() + 1200; }
+  updateHud();
+  if (G.found.every(f => f !== null)) endGame();
+}
+function switchTurn(reason) {
+  G.turn = 1 - G.turn; G.turnLeft = TURN_TIME; SND.turn();
+  toast(`${reason}，換 ${G.names[G.turn]}`); updateHud();
+}
+
+function onPick(side, e) {
+  if (!G || !G.running) return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  audioOn();
+  const now = performance.now();
+  if (G.mode === 'pvc' && now < G.lockUntil) return;
+  const rect = cvs[side].getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width * W, y = (e.clientY - rect.top) / rect.height * H;
+  let best = -1, bestD = Infinity;
+  G.scene.diffs.forEach((d, i) => { if (G.found[i] !== null) return; const dd = Math.hypot(d.x - x, d.y - y); if (dd <= d.r + 8 && dd < bestD) { best = i; bestD = dd; } });
+  if (best >= 0) { markFound(best, G.mode === 'pvc' ? 0 : G.turn); if (G.mode === 'pvp' && G.running) G.turnLeft = TURN_TIME; return; }
+  G.marks.push({ x, y, side, t: now }); SND.bad();
+  const b = side === 'L' ? $('boardL') : $('boardR'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
+  if (G.mode === 'pvc') G.lockUntil = now + LOCK_MS;
+  else switchTurn('點錯了');
+}
+cvs.L.addEventListener('pointerdown', e => onPick('L', e));
+cvs.R.addEventListener('pointerdown', e => onPick('R', e));
+
+function endGame() {
+  if (G.ended) return;
+  G.running = false; G.ended = true; G.ai.target = null; updateHud();
+  const [a, b] = G.scores;
+  let title;
+  if (a > b) { record.a++; title = G.mode === 'pvc' ? '你贏了！' : `${G.names[0]} 獲勝！`; SND.win(); }
+  else if (b > a) { record.b++; title = G.mode === 'pvc' ? '電腦贏了' : `${G.names[1]} 獲勝！`; G.mode === 'pvc' ? SND.lose() : SND.win(); }
+  else { record.tie++; title = '平手'; SND.turn(); }
+  const missed = G.found.filter(f => f === null).length;
+  setTimeout(() => {
+    $('resTitle').textContent = title;
+    $('resA').textContent = a; $('resB').textContent = b; $('resAn').textContent = G.names[0]; $('resBn').textContent = G.names[1];
+    $('resRecord').textContent = `目前戰績 ${G.names[0]} ${record.a} 勝 · ${G.names[1]} ${record.b} 勝` + (record.tie ? ` · 平手 ${record.tie}` : '') + (missed ? `　（圖上虛線圈是沒找到的 ${missed} 處）` : '');
+    $('next').hidden = G.level >= LEVELS.length - 1;
+    $('next').textContent = `下一關 L${G.level + 2}`;
+    $('overlay').hidden = false; $('again').focus();
+  }, missed ? 1600 : 700);
+}
+
+/* ===== 主迴圈 ===== */
+const easeInOut = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+function tick(now) {
+  if (G) {
+    const dt = Math.min(.1, (now - G.last) / 1000); G.last = now;
+    if (G.running && !document.hidden) {
+      if (G.mode === 'pvc') {
+        G.timeLeft -= dt; if (G.timeLeft <= 0) { G.timeLeft = 0; endGame(); }
+        aiStep(now);
+      } else {
+        G.turnLeft -= dt; if (G.turnLeft <= 0) switchTurn('時間到');
+      }
+      updateHud();
+    }
+    drawSide('L', now); drawSide('R', now);
+  }
+  requestAnimationFrame(tick);
+}
+function aiStep(now) {
+  const A = G.ai, L = LEVELS[G.level];
+  if (A.target === null && now >= A.next) {
+    const open = G.found.map((f, i) => f === null ? i : -1).filter(i => i >= 0);
+    if (!open.length) return;
+    const i = open[Math.floor(Math.random() * open.length)], d = G.scene.diffs[i];
+    const side = Math.random() < .5 ? 'L' : 'R';
+    A.target = i; A.from = A.side === side ? { ...A.pos } : { x: W / 2 + (Math.random() - .5) * 200, y: H / 2 + (Math.random() - .5) * 120 };
+    A.side = side; A.to = { x: d.x + (Math.random() - .5) * d.r * .6, y: d.y + (Math.random() - .5) * d.r * .6 };
+    A.start = now; A.dur = 900 + Math.random() * 700;
+  }
+  if (A.target !== null) {
+    const t = Math.min(1, (now - A.start) / A.dur), e = easeInOut(t);
+    A.pos = { x: A.from.x + (A.to.x - A.from.x) * e, y: A.from.y + (A.to.y - A.from.y) * e + Math.sin(t * Math.PI) * -18 };
+    if (t >= 1) {
+      const i = A.target; A.target = null;
+      A.next = now + L.ai * 1000 * (0.6 + Math.random() * 0.8);
+      if (G.found[i] === null) markFound(i, 1);
+    }
+  }
+}
+function drawSide(side, now) {
+  const c = cvs[side].getContext('2d');
+  c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(G.off[side], 0, 0);
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  G.scene.diffs.forEach((d, i) => {
+    const f = G.found[i];
+    if (f === null) {
+      if (G.ended) { c.setLineDash([6, 5]); c.lineWidth = 3; c.strokeStyle = '#ffffff'; c.beginPath(); c.arc(d.x, d.y, d.r + 4, 0, Math.PI * 2); c.stroke(); c.strokeStyle = '#ff9f1c'; c.lineWidth = 2; c.stroke(); c.setLineDash([]); }
+      return;
+    }
+    const age = (now - G.foundAt[i]) / 400, pop = age < 1 ? 1 + (1 - age) * .5 : 1;
+    const r = (d.r + 4) * pop, col = f === 0 ? COL.p1 : COL.p2;
+    c.lineWidth = 7; c.strokeStyle = 'rgba(255,255,255,.9)'; c.beginPath(); c.arc(d.x, d.y, r, 0, Math.PI * 2); c.stroke();
+    c.lineWidth = 3.5; c.strokeStyle = col; c.stroke();
+  });
+  G.marks = G.marks.filter(m => now - m.t < 700);
+  G.marks.forEach(m => {
+    if (m.side !== side) return;
+    const a = 1 - (now - m.t) / 700; c.globalAlpha = a; c.lineCap = 'round';
+    c.strokeStyle = '#ffffff'; c.lineWidth = 7; xMark(c, m.x, m.y); c.strokeStyle = '#e8455a'; c.lineWidth = 4; xMark(c, m.x, m.y);
+    c.globalAlpha = 1;
+  });
+  if (G.mode === 'pvc' && G.ai.target !== null && G.ai.side === side) {
+    const p = G.ai.pos;
+    c.fillStyle = 'rgba(255,255,255,.95)'; c.beginPath(); c.arc(p.x, p.y, 13, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = COL.p2; c.lineWidth = 3; c.beginPath(); c.arc(p.x, p.y, 10, 0, Math.PI * 2); c.stroke();
+    c.beginPath(); c.moveTo(p.x + 7, p.y + 7); c.lineTo(p.x + 15, p.y + 15); c.lineWidth = 4; c.stroke();
+    c.font = '700 12px "Noto Sans TC", sans-serif'; c.fillStyle = COL.p2; c.textAlign = 'center'; c.fillText('電腦', p.x, p.y - 18);
+  }
+  if (G.mode === 'pvc' && now < G.lockUntil && G.running) {
+    c.fillStyle = 'rgba(20,24,36,.35)'; c.fillRect(0, 0, W, H);
+    c.font = '900 26px "Noto Sans TC", sans-serif'; c.textAlign = 'center'; c.fillStyle = '#fff';
+    c.fillText(`點錯了，等 ${((G.lockUntil - now) / 1000).toFixed(1)} 秒`, W / 2, H / 2 + 8);
+  }
+}
+function xMark(c, x, y) { c.beginPath(); c.moveTo(x - 10, y - 10); c.lineTo(x + 10, y + 10); c.moveTo(x + 10, y - 10); c.lineTo(x - 10, y + 10); c.stroke(); }
+
+/* ===== 設定畫面 ===== */
+$('levels').innerHTML = LEVELS.map((L, i) => `
+  <label class="choice"><input type="radio" name="level" id="lv${i + 1}" value="${i}"${i === 0 ? ' checked' : ''}>
+  <span class="lv">L${i + 1}</span><span class="nm">${L.name}</span><span class="d">${L.desc}</span></label>`).join('');
+function syncMode() {
+  const pvp = $('mode-pvp').checked, p2 = $('p2name');
+  p2.disabled = !pvp; $('p2label').textContent = pvp ? '玩家 2' : '電腦';
+  if (!pvp) p2.value = '電腦'; else if (p2.value === '電腦') p2.value = '玩家 2';
+}
+document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener('change', syncMode));
+const chosenLevel = () => +document.querySelector('input[name="level"]:checked').value;
+$('start').addEventListener('click', () => { audioOn(); startGame(chosenLevel()); });
+$('restart').addEventListener('click', () => startGame(G.level));
+$('again').addEventListener('click', () => startGame(G.level));
+$('next').addEventListener('click', () => { const n = Math.min(LEVELS.length - 1, G.level + 1); $('lv' + (n + 1)).checked = true; startGame(n); });
+const toMenu = () => { if (G) G.running = false; $('overlay').hidden = true; $('game').hidden = true; $('setup').hidden = false; };
+$('menu').addEventListener('click', toMenu);
+$('back').addEventListener('click', toMenu);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('overlay').hidden) toMenu(); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', readColors);
+requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
