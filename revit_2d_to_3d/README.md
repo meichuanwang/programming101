@@ -52,22 +52,33 @@ DWG 請先在 AutoCAD 用「另存新檔 → DXF」轉存。
 
 ## 步驟 2：在 Revit 中產生 3D
 
-任選一種方式執行 `revit_build_from_json.py`：
+已針對 **Revit 2026** 調整（Revit 2025 起改用 .NET 8，Dynamo 預設改用 CPython 3；程式兩種 Python 都相容）。任選一種方式執行 `revit_build_from_json.py`：
 
-- **pyRevit**：放到自己的 extension 資料夾當按鈕，或用 pyRevit 的 *Run Script*
-- **RevitPythonShell**：開啟檔案後執行
-- **Dynamo**：新增 *Python Script* 節點，把程式內容貼進去
+### 方法 A：pyRevit（推薦）
 
-執行後會跳出選檔視窗，選步驟 1 產生的 JSON（也可以直接改程式最上面的 `JSON_PATH`）。
+1. 安裝支援 Revit 2026 的 pyRevit 版本（5.x 以上，到 GitHub `pyrevitlabs/pyRevit` 的 Releases 下載）
+2. 建立按鈕資料夾，把程式改名為 `script.py` 放進去：
+   ```
+   我的工具.extension\我的工具.tab\建模.panel\2D轉3D.pushbutton\script.py
+   ```
+3. pyRevit 頁籤 → Settings → Custom Extension Directories 加入 `.extension` 的上層資料夾 → Reload
+4. 點「2D轉3D」按鈕，選 JSON 檔即可
+
+### 方法 B：Dynamo（Revit 2026 內建）
+
+1. 管理 → Dynamo，新增空白圖面
+2. 放一個 **File Path** 節點（選 JSON）接到 **Python Script** 節點的 `IN[0]`
+3. Python Script 節點右鍵 → 引擎選 **CPython3** 或 **PythonNet3**，把程式內容貼進去
+4. 執行（Dynamo 會自己管 Transaction，程式已自動處理）
 
 程式會：
 
 1. 建立 JSON 裡的樓層（已存在同名樓層就沿用）
 2. 依厚度找相符的基本牆類型，沒有就複製一個並調整結構層厚度（命名為「2D轉3D 牆 200mm」）
-3. 建立牆、樓板（支援 Revit 2022 以後的 `Floor.Create`，也相容舊版 `NewFloor`）
+3. 建立牆、樓板（使用 `Floor.Create`，Revit 2022 以後的寫法）
 4. 把門窗放在離插入點最近的牆上（窗會設定窗台高度）
 
-所有動作包在同一個 Transaction 裡，出錯會整個復原；成功後可以 Ctrl+Z 一次復原。
+pyRevit 執行時所有動作包在同一個 Transaction 裡，出錯會整個復原；成功後可以 Ctrl+Z 一次復原。
 
 門窗預設使用專案中第一個已載入的門 / 窗族群，要指定類型請改 `DOOR_TYPE_NAME` / `WINDOW_TYPE_NAME`
 （格式 `"族群名稱: 類型名稱"`）。
