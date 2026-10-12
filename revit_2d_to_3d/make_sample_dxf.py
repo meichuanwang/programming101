@@ -43,6 +43,9 @@ doc.layers.add("PIPE-排水-75")
 msp.add_lwpolyline([(500, 3500), (3000, 3500), (3000, 800)], dxfattribs={"layer": "PIPE-給水-25"})
 # 排水管順著水流方向畫：從 (4000, 3000) 流到出口 (5500, 600)
 msp.add_lwpolyline([(4000, 3000), (4000, 600), (5500, 600)], dxfattribs={"layer": "PIPE-排水-75"})
+# 排水支管 (管徑 50mm) 從 (4800, 2000) 流到主管中間 (4800, 600) -> 會自動切開主管並接三通
+doc.layers.add("PIPE-排水-50")
+msp.add_line((4800, 2000), (4800, 600), dxfattribs={"layer": "PIPE-排水-50"})
 
 out = "sample_double.dxf" if double else "sample_single.dxf"
 doc.saveas(out)

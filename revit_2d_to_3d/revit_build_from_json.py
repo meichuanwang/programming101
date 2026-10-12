@@ -250,37 +250,84 @@ def connector_at(pipe, point):
     return None
 
 
-def connect_pipes(doc, pipes, log):
-    """兩段管端點相接、且方向不同 -> 自動加彎頭 (需要管類型的佈線偏好設定有彎頭族群)"""
-    ends = []  # (點, 管)
+def find_opposite_pair(conns, tol=0.99):
+    """找出兩個方向相反 (一直線) 的接頭，回傳 (i, j)；connector 的 BasisZ 指向管外"""
+    for i in range(len(conns)):
+        for j in range(i + 1, len(conns)):
+            zi = conns[i].CoordinateSystem.BasisZ
+            zj = conns[j].CoordinateSystem.BasisZ
+            if zi.DotProduct(zj) < -tol:
+                return i, j
+    return None
+
+
+def connect_pipes(doc, pipes, systems, log):
+    """
+    把端點落在同一點、同系統的管接起來：
+      2 支、轉角   -> 彎頭 (NewElbowFitting)
+      2 支、一直線但管徑不同 -> 漸縮 (NewTransitionFitting)
+      3 支         -> 三通 (NewTeeFitting)，一直線的兩支當主管
+      4 支         -> 四通 (NewCrossFitting)
+    需要管類型的「佈線偏好設定」有對應的接頭族群。
+    """
+    # 依位置分組 (同一系統才分在同一組)
+    groups = []  # [(點, 系統, [connector, ...])]
     for p in pipes:
         line = p.Location.Curve
-        ends.append((line.GetEndPoint(0), p))
-        ends.append((line.GetEndPoint(1), p))
-    n = 0
-    for i in range(len(ends)):
-        for j in range(i + 1, len(ends)):
-            (pa, a), (pb, b) = ends[i], ends[j]
-            if a.Id == b.Id or pa.DistanceTo(pb) > ft(0.01):
+        for k in (0, 1):
+            pt = line.GetEndPoint(k)
+            c = connector_at(p, pt)
+            if c is None or c.IsConnected:
                 continue
-            da = a.Location.Curve.Direction
-            db = b.Location.Curve.Direction
-            if abs(abs(da.DotProduct(db)) - 1.0) < 1e-6:
-                continue  # 一直線，不需要彎頭
-            ca, cb = connector_at(a, pa), connector_at(b, pb)
-            if ca is None or cb is None or ca.IsConnected or cb.IsConnected:
-                continue
-            try:
-                doc.Create.NewElbowFitting(ca, cb)
-                n += 1
-            except Exception as e:
-                log.append("彎頭建立失敗 (%.2f, %.2f)：%s" % (pa.X * 0.3048, pa.Y * 0.3048, e))
-    return n
+            for g in groups:
+                if g[1] == systems[p.Id] and g[0].DistanceTo(pt) < ft(0.01):
+                    g[2].append(c)
+                    break
+            else:
+                groups.append((pt, systems[p.Id], [c]))
+
+    counts = {"elbow": 0, "transition": 0, "tee": 0, "cross": 0}
+    for pt, _, conns in groups:
+        kind = None
+        try:
+            if len(conns) == 2:
+                if find_opposite_pair(conns) is None:
+                    kind = "elbow"
+                    doc.Create.NewElbowFitting(conns[0], conns[1])
+                elif abs(conns[0].Radius - conns[1].Radius) > 1e-6:
+                    kind = "transition"
+                    doc.Create.NewTransitionFitting(conns[0], conns[1])
+            elif len(conns) == 3:
+                kind = "tee"
+                pair = find_opposite_pair(conns)
+                if pair is None:
+                    raise ValueError("三支管沒有任兩支在一直線上，無法判斷主管")
+                i, j = pair
+                branch = [c for k, c in enumerate(conns) if k not in pair][0]
+                doc.Create.NewTeeFitting(conns[i], conns[j], branch)
+            elif len(conns) == 4:
+                kind = "cross"
+                pair = find_opposite_pair(conns)
+                if pair is None:
+                    raise ValueError("四支管找不到一直線的主管")
+                rest = [c for k, c in enumerate(conns) if k not in pair]
+                doc.Create.NewCrossFitting(conns[pair[0]], conns[pair[1]], rest[0], rest[1])
+            elif len(conns) > 4:
+                log.append("(%.2f, %.2f) 有 %d 支管交會，請手動處理"
+                           % (pt.X * 0.3048, pt.Y * 0.3048, len(conns)))
+            if kind:
+                counts[kind] += 1
+        except Exception as e:
+            names = {"elbow": "彎頭", "transition": "漸縮", "tee": "三通", "cross": "四通"}
+            log.append("%s建立失敗 (%.2f, %.2f)：%s" % (names.get(kind, "接頭"),
+                                                     pt.X * 0.3048, pt.Y * 0.3048, e))
+    return counts
 
 
 def create_pipes(doc, items, levels, log):
+    counts = {"elbow": 0, "transition": 0, "tee": 0, "cross": 0}
     if not items:
-        return [], 0
+        return [], counts
     pipe_types = list(FilteredElementCollector(doc).OfClass(PipeType))
     pipe_type = None
     for t in pipe_types:
@@ -289,9 +336,10 @@ def create_pipes(doc, items, levels, log):
             break
     if pipe_type is None:
         log.append("專案中沒有管類型，略過 %d 段管線 (請改用機電/給排水樣板，或先載入管類型)" % len(items))
-        return [], 0
+        return [], counts
 
     pipes = []
+    systems = {}
     for item in items:
         level = levels[item["level"]]
         # 排水管兩端高度不同 = 有坡度
@@ -303,14 +351,15 @@ def create_pipes(doc, items, levels, log):
         sys_type = find_pipe_system_type(doc, item.get("system"))
         if sys_type is None:
             log.append("專案中沒有管系統類型，略過管線")
-            return pipes, 0
+            return pipes, counts
         pipe = Pipe.Create(doc, sys_type.Id, pipe_type.Id, level.Id, p1, p2)
         dia = pipe.get_Parameter(BuiltInParameter.RBS_PIPE_DIAMETER_PARAM)
         if dia is not None and not dia.IsReadOnly:
             dia.Set(ft(item.get("diameter_mm", 25) / 1000.0))
         pipes.append(pipe)
+        systems[pipe.Id] = item.get("system")
     doc.Regenerate()
-    return pipes, connect_pipes(doc, pipes, log)
+    return pipes, connect_pipes(doc, pipes, systems, log)
 
 
 # ------------------------------------------------------------------ 主流程
@@ -342,10 +391,12 @@ def build(doc, data, in_dynamo):
         n_win = place_openings(doc, data.get("windows", []),
                                find_symbol(doc, BuiltInCategory.OST_Windows, WINDOW_TYPE_NAME),
                                walls, levels, True, log)
-        pipes, n_elbow = create_pipes(doc, data.get("pipes", []), levels, log)
+        pipes, fit = create_pipes(doc, data.get("pipes", []), levels, log)
 
-    log.insert(0, "完成：牆 %d 道、樓板 %d 片、門 %d 樘、窗 %d 樘、管線 %d 段、彎頭 %d 個" % (
-        len(walls), len(data.get("floors", [])), n_door, n_win, len(pipes), n_elbow))
+    log.insert(0, "完成：牆 %d 道、樓板 %d 片、門 %d 樘、窗 %d 樘、管線 %d 段、"
+                  "彎頭 %d、三通 %d、四通 %d、漸縮 %d" % (
+                      len(walls), len(data.get("floors", [])), n_door, n_win, len(pipes),
+                      fit["elbow"], fit["tee"], fit["cross"], fit["transition"]))
     return "\n".join(log)
 
 

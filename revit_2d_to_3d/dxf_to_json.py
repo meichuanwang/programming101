@@ -128,6 +128,31 @@ def collect_pipes(msp, prefixes, default_dia_mm):
     return pipes
 
 
+def split_at_junctions(pipes, tol=0.005):
+    """
+    支管接到主管「中間」時 (T 字形)，把主管在接點切成兩段，
+    Revit 才能在那一點放三通。只跟同系統的管比對；單位：公尺。
+    """
+    result = []
+    for p in pipes:
+        a, b = p["start"], p["end"]
+        d = sub(b, a)
+        L = length(d)
+        u = (d[0] / L, d[1] / L)
+        cuts = set()
+        for o in pipes:
+            if o is p or o["system"] != p["system"]:
+                continue
+            for q in (o["start"], o["end"]):
+                t = dot(sub(q, a), u)
+                if tol < t < L - tol and abs(cross(u, sub(q, a))) < tol:
+                    cuts.add((t, tuple(q)))
+        pts = [tuple(a)] + [q for _, q in sorted(cuts)] + [tuple(b)]
+        for s, e in zip(pts[:-1], pts[1:]):
+            result.append(dict(p, start=list(s), end=list(e)))
+    return result
+
+
 def drain_slope(diameter_mm, fixed):
     """排水坡度：有指定就用指定值；否則管徑 75mm 以下 1/50，以上 1/100 (常用值)"""
     if fixed:
@@ -296,6 +321,7 @@ def convert(path, args):
         "pipes": [dict(p, start=pt(p["start"]), end=pt(p["end"]), level="1F")
                   for p in collect_pipes(msp, tuple(up(args.pipe_prefix)), args.pipe_diameter)],
     }
+    data["pipes"] = split_at_junctions(data["pipes"])
     top = apply_drain_slope(data["pipes"], args.pipe_offset, args.drain_slope)
     if top is not None:
         print("排水管出口高度 %.3f m，最高點 %.3f m" % (args.pipe_offset, top))
