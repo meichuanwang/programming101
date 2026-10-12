@@ -294,8 +294,10 @@ def create_pipes(doc, items, levels, log):
     pipes = []
     for item in items:
         level = levels[item["level"]]
-        z = level.Elevation + ft(item.get("offset", 2.7))
-        p1, p2 = xyz(item["start"], z), xyz(item["end"], z)
+        # 排水管兩端高度不同 = 有坡度
+        z1 = level.Elevation + ft(item.get("start_offset", item.get("offset", 2.7)))
+        z2 = level.Elevation + ft(item.get("end_offset", item.get("offset", 2.7)))
+        p1, p2 = xyz(item["start"], z1), xyz(item["end"], z2)
         if p1.DistanceTo(p2) < doc.Application.ShortCurveTolerance:
             continue
         sys_type = find_pipe_system_type(doc, item.get("system"))

@@ -8,6 +8,7 @@
   - 窗 (WINDOW 圖層)：圖塊插入點 (INSERT)
   - 樓板 (FLOOR 圖層)：封閉的聚合線 (LWPOLYLINE)
   - 管線 (PIPE 開頭的圖層，例如 PIPE-給水-25)：LINE / LWPOLYLINE 當管中心線
+    排水管會自動做坡度：請「順著水流方向」畫線，最後一點是出口 (最低點)
 輸出成 JSON (單位：公尺)，給 revit_build_from_json.py 在 Revit 裡產生 3D 模型。
 
 用法:
@@ -125,6 +126,48 @@ def collect_pipes(msp, prefixes, default_dia_mm):
             pipes.append({"start": a, "end": b, "diameter_mm": dia,
                           "system": guess_pipe_system(layer), "layer": layer})
     return pipes
+
+
+def drain_slope(diameter_mm, fixed):
+    """排水坡度：有指定就用指定值；否則管徑 75mm 以下 1/50，以上 1/100 (常用值)"""
+    if fixed:
+        return fixed
+    return 0.02 if diameter_mm <= 75 else 0.01
+
+
+def apply_drain_slope(pipes, outlet_offset, fixed_slope):
+    """
+    排水管照畫線方向 (起點 -> 終點) 當水流方向，沒有再往下游流的點就是出口。
+    出口高度 = outlet_offset，往上游每段依坡度加高，所以支管匯流時高度也會一致。
+    其他管線維持水平。回傳排水管最高點的高度 (沒有排水管回傳 None)。
+    """
+    key = lambda p: (round(p[0], 3), round(p[1], 3))
+    downstream = {}  # 節點 -> (下游節點, 這段的高差)
+    for p in pipes:
+        if p["system"] == "sanitary":
+            rise = seg_len((p["start"], p["end"])) * drain_slope(p["diameter_mm"], fixed_slope)
+            downstream[key(p["start"])] = (key(p["end"]), rise)
+
+    memo = {}
+
+    def height(node, seen=()):
+        if node in memo:
+            return memo[node]
+        if node not in downstream or node in seen:  # 出口 (或畫成迴圈，當出口處理)
+            return 0.0
+        nxt, rise = downstream[node]
+        memo[node] = h = height(nxt, seen + (node,)) + rise
+        return h
+
+    top = None
+    for p in pipes:
+        if p["system"] == "sanitary":
+            p["start_offset"] = round(outlet_offset + height(key(p["start"])), 4)
+            p["end_offset"] = round(outlet_offset + height(key(p["end"])), 4)
+            top = max(top or 0.0, p["start_offset"])
+        else:
+            p["start_offset"] = p["end_offset"] = outlet_offset
+    return top
 
 
 # ---------------------------------------------------------------- 雙線牆 -> 中心線
@@ -250,10 +293,14 @@ def convert(path, args):
                     for o in collect_inserts(msp, up(args.window_layers))],
         "floors": [{"points": [pt(p) for p in f], "level": "1F"}
                    for f in collect_floors(msp, up(args.floor_layers))],
-        "pipes": [dict(p, start=pt(p["start"]), end=pt(p["end"]), level="1F",
-                       offset=args.pipe_offset)
+        "pipes": [dict(p, start=pt(p["start"]), end=pt(p["end"]), level="1F")
                   for p in collect_pipes(msp, tuple(up(args.pipe_prefix)), args.pipe_diameter)],
     }
+    top = apply_drain_slope(data["pipes"], args.pipe_offset, args.drain_slope)
+    if top is not None:
+        print("排水管出口高度 %.3f m，最高點 %.3f m" % (args.pipe_offset, top))
+        if top > args.height:
+            print("警告：排水管最高點超過牆高 %.2f m，請降低 --pipe-offset" % args.height)
     return data
 
 
@@ -275,7 +322,10 @@ def main():
     ap.add_argument("--pipe-prefix", default="PIPE,P-,給水,熱水,排水,污水,管",
                     help="管線圖層名稱開頭，逗號分隔")
     ap.add_argument("--pipe-diameter", type=float, default=25, help="預設管徑 (mm)")
-    ap.add_argument("--pipe-offset", type=float, default=2.7, help="管中心離樓板的高度 (m)")
+    ap.add_argument("--pipe-offset", type=float, default=2.7,
+                    help="管中心離樓板的高度 (m)；排水管是指出口 (最低點) 的高度")
+    ap.add_argument("--drain-slope", type=float, default=None,
+                    help="排水坡度，例如 0.01 = 1/100 (預設：管徑75mm以下 1/50，以上 1/100)")
     args = ap.parse_args()
 
     data = convert(args.dxf, args)

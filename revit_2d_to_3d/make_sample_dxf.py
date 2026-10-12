@@ -37,11 +37,12 @@ msp.add_blockref("DOOR_900", (1500, 0), dxfattribs={"layer": "DOOR"})
 msp.add_blockref("WIN_1500", (W, 2000), dxfattribs={"layer": "WINDOW", "rotation": 90})
 msp.add_blockref("WIN_1500", (1800, H), dxfattribs={"layer": "WINDOW"})
 
-# 給水管 (管徑 25mm)：沿著牆內側走一個 L 型；排水管 (管徑 75mm) 一段直管
+# 給水管 (管徑 25mm)、排水管 (管徑 75mm) 各走一個 L 型
 doc.layers.add("PIPE-給水-25")
 doc.layers.add("PIPE-排水-75")
 msp.add_lwpolyline([(500, 3500), (3000, 3500), (3000, 800)], dxfattribs={"layer": "PIPE-給水-25"})
-msp.add_line((4000, 600), (5500, 600), dxfattribs={"layer": "PIPE-排水-75"})
+# 排水管順著水流方向畫：從 (4000, 3000) 流到出口 (5500, 600)
+msp.add_lwpolyline([(4000, 3000), (4000, 600), (5500, 600)], dxfattribs={"layer": "PIPE-排水-75"})
 
 out = "sample_double.dxf" if double else "sample_single.dxf"
 doc.saveas(out)
