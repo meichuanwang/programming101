@@ -3,7 +3,7 @@
 建模資料 (JSON) -> Revit 3D 模型
 
 在 Revit 裡執行 (pyRevit / Dynamo 的 Python Script 節點皆可，已針對 Revit 2026 調整)，
-讀取 dxf_to_json.py 產生的 JSON，自動建立：樓層、牆、樓板、門、窗。
+讀取 dxf_to_json.py 產生的 JSON，自動建立：樓層、牆、樓板、門、窗、管線。
 
 注意：
   - 寫成 IronPython 2.7 / CPython 3 (PythonNet) 都能跑的語法 (不用 f-string)
@@ -22,12 +22,15 @@ from Autodesk.Revit.DB import (
     BuiltInCategory, BuiltInParameter, CurveArray, CurveLoop, FilteredElementCollector,
     Floor, FloorType, Level, Line, Transaction, Wall, WallKind, WallType, XYZ,
 )
+from Autodesk.Revit.DB import MEPSystemClassification
+from Autodesk.Revit.DB.Plumbing import Pipe, PipeType, PipingSystemType
 from Autodesk.Revit.DB.Structure import StructuralType
 
 # ------------------------------------------------------------------ 設定
 JSON_PATH = r""            # 留空會跳出選檔視窗
 DOOR_TYPE_NAME = None      # 例如 "M_單扇門: 0915 x 2134mm"，None = 用第一個
 WINDOW_TYPE_NAME = None
+PIPE_TYPE_NAME = None      # 管類型名稱，None = 用第一個
 MAX_OPENING_DIST_M = 0.5   # 門窗插入點離牆超過這個距離就略過
 
 M_TO_FT = 1.0 / 0.3048
@@ -217,6 +220,97 @@ def place_openings(doc, items, symbol, walls, levels, is_window, log):
     return count
 
 
+# ------------------------------------------------------------------ 管線
+PIPE_SYSTEM_CLASS = {
+    "cold_water": MEPSystemClassification.DomesticColdWater,
+    "hot_water": MEPSystemClassification.DomesticHotWater,
+    "sanitary": MEPSystemClassification.Sanitary,
+}
+
+
+def type_name(t):
+    return t.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM).AsString()
+
+
+def find_pipe_system_type(doc, system):
+    types = list(FilteredElementCollector(doc).OfClass(PipingSystemType))
+    if not types:
+        return None
+    wanted = PIPE_SYSTEM_CLASS.get(system)
+    for t in types:
+        if wanted is not None and t.SystemClassification == wanted:
+            return t
+    return types[0]
+
+
+def connector_at(pipe, point):
+    for c in pipe.ConnectorManager.Connectors:
+        if c.Origin.DistanceTo(point) < ft(0.01):
+            return c
+    return None
+
+
+def connect_pipes(doc, pipes, log):
+    """兩段管端點相接、且方向不同 -> 自動加彎頭 (需要管類型的佈線偏好設定有彎頭族群)"""
+    ends = []  # (點, 管)
+    for p in pipes:
+        line = p.Location.Curve
+        ends.append((line.GetEndPoint(0), p))
+        ends.append((line.GetEndPoint(1), p))
+    n = 0
+    for i in range(len(ends)):
+        for j in range(i + 1, len(ends)):
+            (pa, a), (pb, b) = ends[i], ends[j]
+            if a.Id == b.Id or pa.DistanceTo(pb) > ft(0.01):
+                continue
+            da = a.Location.Curve.Direction
+            db = b.Location.Curve.Direction
+            if abs(abs(da.DotProduct(db)) - 1.0) < 1e-6:
+                continue  # 一直線，不需要彎頭
+            ca, cb = connector_at(a, pa), connector_at(b, pb)
+            if ca is None or cb is None or ca.IsConnected or cb.IsConnected:
+                continue
+            try:
+                doc.Create.NewElbowFitting(ca, cb)
+                n += 1
+            except Exception as e:
+                log.append("彎頭建立失敗 (%.2f, %.2f)：%s" % (pa.X * 0.3048, pa.Y * 0.3048, e))
+    return n
+
+
+def create_pipes(doc, items, levels, log):
+    if not items:
+        return [], 0
+    pipe_types = list(FilteredElementCollector(doc).OfClass(PipeType))
+    pipe_type = None
+    for t in pipe_types:
+        if PIPE_TYPE_NAME is None or type_name(t) == PIPE_TYPE_NAME:
+            pipe_type = t
+            break
+    if pipe_type is None:
+        log.append("專案中沒有管類型，略過 %d 段管線 (請改用機電/給排水樣板，或先載入管類型)" % len(items))
+        return [], 0
+
+    pipes = []
+    for item in items:
+        level = levels[item["level"]]
+        z = level.Elevation + ft(item.get("offset", 2.7))
+        p1, p2 = xyz(item["start"], z), xyz(item["end"], z)
+        if p1.DistanceTo(p2) < doc.Application.ShortCurveTolerance:
+            continue
+        sys_type = find_pipe_system_type(doc, item.get("system"))
+        if sys_type is None:
+            log.append("專案中沒有管系統類型，略過管線")
+            return pipes, 0
+        pipe = Pipe.Create(doc, sys_type.Id, pipe_type.Id, level.Id, p1, p2)
+        dia = pipe.get_Parameter(BuiltInParameter.RBS_PIPE_DIAMETER_PARAM)
+        if dia is not None and not dia.IsReadOnly:
+            dia.Set(ft(item.get("diameter_mm", 25) / 1000.0))
+        pipes.append(pipe)
+    doc.Regenerate()
+    return pipes, connect_pipes(doc, pipes, log)
+
+
 # ------------------------------------------------------------------ 主流程
 def build(doc, data, in_dynamo):
     log = []
@@ -246,9 +340,10 @@ def build(doc, data, in_dynamo):
         n_win = place_openings(doc, data.get("windows", []),
                                find_symbol(doc, BuiltInCategory.OST_Windows, WINDOW_TYPE_NAME),
                                walls, levels, True, log)
+        pipes, n_elbow = create_pipes(doc, data.get("pipes", []), levels, log)
 
-    log.insert(0, "完成：牆 %d 道、樓板 %d 片、門 %d 樘、窗 %d 樘" % (
-        len(walls), len(data.get("floors", [])), n_door, n_win))
+    log.insert(0, "完成：牆 %d 道、樓板 %d 片、門 %d 樘、窗 %d 樘、管線 %d 段、彎頭 %d 個" % (
+        len(walls), len(data.get("floors", [])), n_door, n_win, len(pipes), n_elbow))
     return "\n".join(log)
 
 

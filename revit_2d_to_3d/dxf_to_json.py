@@ -7,6 +7,7 @@
   - 門 (DOOR 圖層)：圖塊插入點 (INSERT)
   - 窗 (WINDOW 圖層)：圖塊插入點 (INSERT)
   - 樓板 (FLOOR 圖層)：封閉的聚合線 (LWPOLYLINE)
+  - 管線 (PIPE 開頭的圖層，例如 PIPE-給水-25)：LINE / LWPOLYLINE 當管中心線
 輸出成 JSON (單位：公尺)，給 revit_build_from_json.py 在 Revit 裡產生 3D 模型。
 
 用法:
@@ -17,6 +18,7 @@
 import argparse
 import json
 import math
+import re
 
 import ezdxf
 
@@ -91,6 +93,38 @@ def collect_floors(msp, layers):
             if len(pts) >= 3:
                 floors.append(pts)
     return floors
+
+
+# 圖層名稱關鍵字 -> 管線系統 (給 Revit 端挑選管系統類型)
+PIPE_SYSTEM_KEYWORDS = [
+    ("hot_water", ("熱水", "HW")),
+    ("sanitary", ("排水", "污水", "廢水", "SAN", "DR")),
+    ("cold_water", ("給水", "冷水", "CW")),
+]
+
+
+def guess_pipe_system(layer):
+    name = layer.upper()
+    for system, keys in PIPE_SYSTEM_KEYWORDS:
+        if any(k in name for k in keys):
+            return system
+    return "other"
+
+
+def collect_pipes(msp, prefixes, default_dia_mm):
+    """
+    圖層名稱以 prefixes 開頭的線段都當管線中心線。
+    圖層名稱最後的數字當管徑 (mm)，例如 PIPE-給水-25 = 25mm；沒有就用預設管徑。
+    """
+    layers = {e.dxf.layer for e in msp if e.dxf.layer.upper().startswith(prefixes)}
+    pipes = []
+    for layer in sorted(layers):
+        m = re.search(r"(\d+)\s*$", layer)
+        dia = float(m.group(1)) if m else default_dia_mm
+        for a, b in collect_segments(msp, {layer.upper()}):
+            pipes.append({"start": a, "end": b, "diameter_mm": dia,
+                          "system": guess_pipe_system(layer), "layer": layer})
+    return pipes
 
 
 # ---------------------------------------------------------------- 雙線牆 -> 中心線
@@ -216,6 +250,9 @@ def convert(path, args):
                     for o in collect_inserts(msp, up(args.window_layers))],
         "floors": [{"points": [pt(p) for p in f], "level": "1F"}
                    for f in collect_floors(msp, up(args.floor_layers))],
+        "pipes": [dict(p, start=pt(p["start"]), end=pt(p["end"]), level="1F",
+                       offset=args.pipe_offset)
+                  for p in collect_pipes(msp, tuple(up(args.pipe_prefix)), args.pipe_diameter)],
     }
     return data
 
@@ -235,13 +272,18 @@ def main():
     ap.add_argument("--max-thickness", type=float, default=0.40, help="雙線牆最大厚度 (m)")
     ap.add_argument("--height", type=float, default=3.0, help="牆高 (m)")
     ap.add_argument("--sill-height", type=float, default=0.9, help="窗台高 (m)")
+    ap.add_argument("--pipe-prefix", default="PIPE,P-,給水,熱水,排水,污水,管",
+                    help="管線圖層名稱開頭，逗號分隔")
+    ap.add_argument("--pipe-diameter", type=float, default=25, help="預設管徑 (mm)")
+    ap.add_argument("--pipe-offset", type=float, default=2.7, help="管中心離樓板的高度 (m)")
     args = ap.parse_args()
 
     data = convert(args.dxf, args)
     with open(args.json, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    print("牆 %d 道、門 %d 樘、窗 %d 樘、樓板 %d 片 -> %s" % (
-        len(data["walls"]), len(data["doors"]), len(data["windows"]), len(data["floors"]), args.json))
+    print("牆 %d 道、門 %d 樘、窗 %d 樘、樓板 %d 片、管線 %d 段 -> %s" % (
+        len(data["walls"]), len(data["doors"]), len(data["windows"]), len(data["floors"]),
+        len(data["pipes"]), args.json))
 
 
 if __name__ == "__main__":
