@@ -3,7 +3,7 @@
 建模資料 (JSON) -> Revit 3D 模型
 
 在 Revit 裡執行 (pyRevit / Dynamo 的 Python Script 節點皆可，已針對 Revit 2026 調整)，
-讀取 dxf_to_json.py 產生的 JSON，自動建立：樓層、牆、樓板、門、窗、管線。
+讀取 dxf_to_json.py 產生的 JSON，自動建立：樓層、牆、樓板、門、窗、管線、風管。
 
 注意：
   - 寫成 IronPython 2.7 / CPython 3 (PythonNet) 都能跑的語法 (不用 f-string)
@@ -22,7 +22,8 @@ from Autodesk.Revit.DB import (
     BuiltInCategory, BuiltInParameter, CurveArray, CurveLoop, FilteredElementCollector,
     Floor, FloorType, Level, Line, Transaction, Wall, WallKind, WallType, XYZ,
 )
-from Autodesk.Revit.DB import MEPSystemClassification
+from Autodesk.Revit.DB import ConnectorProfileType, MEPSystemClassification
+from Autodesk.Revit.DB.Mechanical import Duct, DuctType, MechanicalSystemType
 from Autodesk.Revit.DB.Plumbing import Pipe, PipeType, PipingSystemType
 from Autodesk.Revit.DB.Structure import StructuralType
 
@@ -34,6 +35,8 @@ PIPE_TYPE_NAME = None      # 給水/熱水管類型名稱，None = 用第一個
 # 排水管類型名稱。接頭用哪個族群 (Y接、順水三通、45度彎頭) 是由這個管類型的
 # 「佈線偏好設定」決定，建議建一個排水專用的管類型，例如 "PVC 排水"。None = 同上
 DRAIN_PIPE_TYPE_NAME = None
+RECT_DUCT_TYPE_NAME = None   # 矩形風管類型名稱，None = 用第一個矩形風管類型
+ROUND_DUCT_TYPE_NAME = None  # 圓形風管類型名稱，None = 用第一個圓形風管類型
 MAX_OPENING_DIST_M = 0.5   # 門窗插入點離牆超過這個距離就略過
 
 M_TO_FT = 1.0 / 0.3048
@@ -246,6 +249,13 @@ def find_pipe_system_type(doc, system):
     return types[0]
 
 
+def conn_size(c):
+    """接頭尺寸 (圓形看半徑，矩形看寬高)，用來判斷要不要放漸縮"""
+    if c.Shape == ConnectorProfileType.Round:
+        return (round(c.Radius, 6),)
+    return (round(c.Width, 6), round(c.Height, 6))
+
+
 def connector_at(pipe, point):
     for c in pipe.ConnectorManager.Connectors:
         if c.Origin.DistanceTo(point) < ft(0.01):
@@ -264,7 +274,7 @@ def find_opposite_pair(conns, tol=0.99):
     return None
 
 
-def connect_pipes(doc, pipes, systems, log):
+def connect_mep(doc, pipes, systems, log):
     """
     把端點落在同一點、同系統的管接起來：
       2 支、轉角   -> 彎頭 (NewElbowFitting)
@@ -298,7 +308,7 @@ def connect_pipes(doc, pipes, systems, log):
                 if find_opposite_pair(conns) is None:
                     kind = "elbow"
                     doc.Create.NewElbowFitting(conns[0], conns[1])
-                elif abs(conns[0].Radius - conns[1].Radius) > 1e-6:
+                elif conn_size(conns[0]) != conn_size(conns[1]):
                     kind = "transition"
                     doc.Create.NewTransitionFitting(conns[0], conns[1])
             elif len(conns) == 3:
@@ -369,7 +379,70 @@ def create_pipes(doc, items, levels, log):
         pipes.append(pipe)
         systems[pipe.Id] = item.get("system")
     doc.Regenerate()
-    return pipes, connect_pipes(doc, pipes, systems, log)
+    return pipes, connect_mep(doc, pipes, systems, log)
+
+
+# ------------------------------------------------------------------ 風管
+DUCT_SYSTEM_CLASS = {
+    "supply_air": MEPSystemClassification.SupplyAir,
+    "return_air": MEPSystemClassification.ReturnAir,
+    "exhaust_air": MEPSystemClassification.ExhaustAir,
+}
+
+
+def create_ducts(doc, items, levels, log):
+    counts = {"elbow": 0, "transition": 0, "tee": 0, "cross": 0}
+    if not items:
+        return [], counts
+    duct_types = list(FilteredElementCollector(doc).OfClass(DuctType))
+    sys_types = list(FilteredElementCollector(doc).OfClass(MechanicalSystemType))
+    if not duct_types or not sys_types:
+        log.append("專案中沒有風管類型或風管系統，略過 %d 段風管 (請用機電樣板)" % len(items))
+        return [], counts
+
+    def pick_duct_type(shape):
+        want = ConnectorProfileType.Rectangular if shape == "rect" else ConnectorProfileType.Round
+        name = RECT_DUCT_TYPE_NAME if shape == "rect" else ROUND_DUCT_TYPE_NAME
+        for t in duct_types:
+            if t.Shape == want and (name is None or type_name(t) == name):
+                return t
+        return None
+
+    def pick_system(system):
+        wanted = DUCT_SYSTEM_CLASS.get(system)
+        for t in sys_types:
+            if wanted is not None and t.SystemClassification == wanted:
+                return t
+        return sys_types[0]
+
+    ducts, systems, missing = [], {}, set()
+    for item in items:
+        level = levels[item["level"]]
+        z1 = level.Elevation + ft(item.get("start_offset", 2.6))
+        z2 = level.Elevation + ft(item.get("end_offset", 2.6))
+        p1, p2 = xyz(item["start"], z1), xyz(item["end"], z2)
+        if p1.DistanceTo(p2) < doc.Application.ShortCurveTolerance:
+            continue
+        dtype = pick_duct_type(item["shape"])
+        if dtype is None:
+            missing.add(item["shape"])
+            continue
+        duct = Duct.Create(doc, pick_system(item.get("system")).Id, dtype.Id, level.Id, p1, p2)
+        if item["shape"] == "rect":
+            sizes = [(BuiltInParameter.RBS_CURVE_WIDTH_PARAM, item["width_mm"]),
+                     (BuiltInParameter.RBS_CURVE_HEIGHT_PARAM, item["height_mm"])]
+        else:
+            sizes = [(BuiltInParameter.RBS_CURVE_DIAMETER_PARAM, item["diameter_mm"])]
+        for bip, mm in sizes:
+            prm = duct.get_Parameter(bip)
+            if prm is not None and not prm.IsReadOnly:
+                prm.Set(ft(mm / 1000.0))
+        ducts.append(duct)
+        systems[duct.Id] = "duct:" + item.get("system", "")
+    for shape in missing:
+        log.append("專案中沒有%s風管類型，這類風管已略過" % ("矩形" if shape == "rect" else "圓形"))
+    doc.Regenerate()
+    return ducts, connect_mep(doc, ducts, systems, log)
 
 
 # ------------------------------------------------------------------ 主流程
@@ -402,11 +475,15 @@ def build(doc, data, in_dynamo):
                                find_symbol(doc, BuiltInCategory.OST_Windows, WINDOW_TYPE_NAME),
                                walls, levels, True, log)
         pipes, fit = create_pipes(doc, data.get("pipes", []), levels, log)
+        ducts, dfit = create_ducts(doc, data.get("ducts", []), levels, log)
 
-    log.insert(0, "完成：牆 %d 道、樓板 %d 片、門 %d 樘、窗 %d 樘、管線 %d 段、"
-                  "彎頭 %d、三通 %d、四通 %d、漸縮 %d" % (
-                      len(walls), len(data.get("floors", [])), n_door, n_win, len(pipes),
-                      fit["elbow"], fit["tee"], fit["cross"], fit["transition"]))
+    fit_text = "彎頭 %d、三通 %d、四通 %d、漸縮 %d"
+    log.insert(0, "完成：牆 %d 道、樓板 %d 片、門 %d 樘、窗 %d 樘" % (
+        len(walls), len(data.get("floors", [])), n_door, n_win))
+    log.insert(1, ("管線 %d 段 (" + fit_text + ")") % (
+        len(pipes), fit["elbow"], fit["tee"], fit["cross"], fit["transition"]))
+    log.insert(2, ("風管 %d 段 (" + fit_text + ")") % (
+        len(ducts), dfit["elbow"], dfit["tee"], dfit["cross"], dfit["transition"]))
     return "\n".join(log)
 
 

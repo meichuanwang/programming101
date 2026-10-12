@@ -9,6 +9,7 @@
   - 樓板 (FLOOR 圖層)：封閉的聚合線 (LWPOLYLINE)
   - 管線 (PIPE 開頭的圖層，例如 PIPE-給水-25)：LINE / LWPOLYLINE 當管中心線
     排水管會自動做坡度：請「順著水流方向」畫線，最後一點是出口 (最低點)
+  - 風管 (DUCT 開頭的圖層，例如 DUCT-送風-400x300、DUCT-回風-300)：LINE / LWPOLYLINE 當風管中心線
 輸出成 JSON (單位：公尺)，給 revit_build_from_json.py 在 Revit 裡產生 3D 模型。
 
 用法:
@@ -126,6 +127,45 @@ def collect_pipes(msp, prefixes, default_dia_mm):
             pipes.append({"start": a, "end": b, "diameter_mm": dia,
                           "system": guess_pipe_system(layer), "layer": layer})
     return pipes
+
+
+# 圖層名稱關鍵字 -> 風管系統
+DUCT_SYSTEM_KEYWORDS = [
+    ("supply_air", ("送風", "SA", "SUPPLY")),
+    ("return_air", ("回風", "RA", "RETURN")),
+    ("exhaust_air", ("排風", "排氣", "EA", "EXHAUST")),
+]
+
+
+def parse_duct_size(text):
+    """'400x300' -> 矩形 (400, 300)；'300' -> 圓形 Ø300；認不出來回傳 None"""
+    m = re.search(r"(\d+)\s*[xX×*]\s*(\d+)\s*$", text)
+    if m:
+        return {"shape": "rect", "width_mm": float(m.group(1)), "height_mm": float(m.group(2))}
+    m = re.search(r"(\d+)\s*$", text)
+    if m:
+        return {"shape": "round", "diameter_mm": float(m.group(1))}
+    return None
+
+
+def collect_ducts(msp, prefixes, default_size):
+    """
+    圖層名稱以 prefixes 開頭的線段都當風管中心線。
+    名稱最後是 寬x高 = 矩形風管 (mm)，只有一個數字 = 圓形風管直徑 (mm)。
+    """
+    layers = {e.dxf.layer for e in msp if e.dxf.layer.upper().startswith(prefixes)}
+    ducts = []
+    for layer in sorted(layers):
+        size = parse_duct_size(layer) or parse_duct_size(default_size)
+        name = layer.upper()
+        system = "other_air"
+        for sys_name, keys in DUCT_SYSTEM_KEYWORDS:
+            if any(k in name for k in keys):
+                system = sys_name
+                break
+        for a, b in collect_segments(msp, {name}):
+            ducts.append(dict(size, start=a, end=b, system=system, layer=layer))
+    return ducts
 
 
 def make_wye_entries(pipes, tol=0.005):
@@ -377,6 +417,15 @@ def convert(path, args):
         print("排水管出口高度 %.3f m，最高點 %.3f m" % (args.pipe_offset, top))
         if top > args.height:
             print("警告：排水管最高點超過牆高 %.2f m，請降低 --pipe-offset" % args.height)
+
+    ducts = [dict(d, start=pt(d["start"]), end=pt(d["end"]), level="1F",
+                  start_offset=args.duct_offset, end_offset=args.duct_offset)
+             for d in collect_ducts(msp, tuple(up(args.duct_prefix)), args.duct_size)]
+    data["ducts"] = split_at_junctions(ducts)  # 支管接主管中間 -> 切開主管，Revit 才能放三通
+    if ducts:
+        tallest = max(d.get("height_mm", d.get("diameter_mm", 0)) for d in ducts) / 1000.0
+        if args.duct_offset + tallest / 2 > args.height:
+            print("警告：風管頂部超過牆高 %.2f m，請降低 --duct-offset" % args.height)
     return data
 
 
@@ -404,14 +453,19 @@ def main():
                     help="排水坡度，例如 0.01 = 1/100 (預設：管徑75mm以下 1/50，以上 1/100)")
     ap.add_argument("--drain-junction", choices=["wye", "tee"], default="wye",
                     help="排水支管接主管的方式：wye = Y接+45度彎頭 (預設)；tee = 維持垂直 (用順水三通)")
+    ap.add_argument("--duct-prefix", default="DUCT,D-,風管,送風,回風,排風",
+                    help="風管圖層名稱開頭，逗號分隔")
+    ap.add_argument("--duct-size", default="400x300",
+                    help="圖層名稱沒寫尺寸時的預設風管尺寸 (mm)，例如 400x300 或 300 (圓形)")
+    ap.add_argument("--duct-offset", type=float, default=2.6, help="風管中心離樓板的高度 (m)")
     args = ap.parse_args()
 
     data = convert(args.dxf, args)
     with open(args.json, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    print("牆 %d 道、門 %d 樘、窗 %d 樘、樓板 %d 片、管線 %d 段 -> %s" % (
+    print("牆 %d 道、門 %d 樘、窗 %d 樘、樓板 %d 片、管線 %d 段、風管 %d 段 -> %s" % (
         len(data["walls"]), len(data["doors"]), len(data["windows"]), len(data["floors"]),
-        len(data["pipes"]), args.json))
+        len(data["pipes"]), len(data["ducts"]), args.json))
 
 
 if __name__ == "__main__":

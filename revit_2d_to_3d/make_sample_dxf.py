@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""產生測試用的 DXF 平面圖 (單位 mm)：6m x 4m 的房間，中間一道隔間牆，一扇門、兩扇窗、給水管與排水管。
+"""產生測試用的 DXF 平面圖 (單位 mm)：6m x 4m 的房間，中間一道隔間牆，一扇門、兩扇窗、給水管與排水管、送風與排風管。
 
     python make_sample_dxf.py            -> sample_single.dxf (單線牆)
     python make_sample_dxf.py --double   -> sample_double.dxf (雙線牆, 牆厚 200)
@@ -46,6 +46,15 @@ msp.add_lwpolyline([(4000, 3000), (4000, 600), (5500, 600)], dxfattribs={"layer"
 # 排水支管 (管徑 50mm) 從 (4800, 2000) 流到主管中間 (4800, 600) -> 會自動切開主管並接三通
 doc.layers.add("PIPE-排水-50")
 msp.add_line((4800, 2000), (4800, 600), dxfattribs={"layer": "PIPE-排水-50"})
+
+# 送風管：矩形主管 400x300 沿著左邊房間走，中間接一支 250x200 的支管 (會自動放三通)
+doc.layers.add("DUCT-送風-400x300")
+doc.layers.add("DUCT-送風-250x200")
+msp.add_lwpolyline([(600, 600), (2400, 600), (2400, 2500)], dxfattribs={"layer": "DUCT-送風-400x300"})
+msp.add_line((1700, 600), (1700, 2000), dxfattribs={"layer": "DUCT-送風-250x200"})
+# 排風管：圓形 Ø200
+doc.layers.add("DUCT-排風-200")
+msp.add_line((5000, 3600), (5000, 2200), dxfattribs={"layer": "DUCT-排風-200"})
 
 out = "sample_double.dxf" if double else "sample_single.dxf"
 doc.saveas(out)

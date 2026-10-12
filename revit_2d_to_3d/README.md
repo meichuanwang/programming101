@@ -42,6 +42,7 @@ DWG 請先在 AutoCAD 用「另存新檔 → DXF」轉存。
 | `WINDOW` / `窗` | 窗圖塊 (INSERT)，插入點要在牆上 | `--window-layers` |
 | `FLOOR` / `樓板` | 封閉聚合線，當作樓板邊界 | `--floor-layers` |
 | `PIPE-...` 開頭（例如 `PIPE-給水-25`） | 管線中心線：LINE 或 LWPOLYLINE | `--pipe-prefix` |
+| `DUCT-...` 開頭（例如 `DUCT-送風-400x300`） | 風管中心線：LINE 或 LWPOLYLINE | `--duct-prefix` |
 
 其他參數：
 
@@ -113,6 +114,20 @@ Revit 實際放哪個族群（Y 接、順水三通、45 度彎頭）由**排水�
 
 然後把 `revit_build_from_json.py` 最上面的 `DRAIN_PIPE_TYPE_NAME` 改成這個類型名稱。
 
+### 風管
+
+| 圖層名稱 | Revit 風管系統 | 尺寸 |
+| --- | --- | --- |
+| `DUCT-送風-400x300`（或含 `SA`） | 送風 | 矩形 寬 400 × 高 300 mm |
+| `DUCT-回風-300`（或含 `RA`） | 回風 | 圓形 Ø300 mm |
+| `DUCT-排風-200`（或含「排氣」、`EA`） | 排風 | 圓形 Ø200 mm |
+
+- 名稱最後是 `寬x高` 就是矩形風管，只有一個數字就是圓形風管
+- `--duct-offset 2.6`：風管中心離樓板的高度 (m)；頂部超過牆高會警告
+- `--duct-size 400x300`：圖層名稱沒寫尺寸時的預設尺寸
+- 彎頭、三通、四通、漸縮的自動接法和管線相同（支管畫到主管線上即可）
+- 專案要有矩形 / 圓形風管類型（機電樣板內建），要指定類型請改 `RECT_DUCT_TYPE_NAME` / `ROUND_DUCT_TYPE_NAME`
+
 ## 步驟 2：在 Revit 中產生 3D
 
 已針對 **Revit 2026** 調整（Revit 2025 起改用 .NET 8，Dynamo 預設改用 CPython 3；程式兩種 Python 都相容）。任選一種方式執行 `revit_build_from_json.py`：
@@ -141,6 +156,7 @@ Revit 實際放哪個族群（Y 接、順水三通、45 度彎頭）由**排水�
 3. 建立牆、樓板（使用 `Floor.Create`，Revit 2022 以後的寫法）
 4. 把門窗放在離插入點最近的牆上（窗會設定窗台高度）
 5. 建立管線，依圖層設定管系統、管徑，自動接彎頭、三通、四通、漸縮
+6. 建立風管，依圖層設定風管系統、尺寸（矩形 / 圓形），自動接頭
 
 pyRevit 執行時所有動作包在同一個 Transaction 裡，出錯會整個復原；成功後可以 Ctrl+Z 一次復原。
 
