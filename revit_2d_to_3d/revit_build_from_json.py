@@ -30,7 +30,10 @@ from Autodesk.Revit.DB.Structure import StructuralType
 JSON_PATH = r""            # 留空會跳出選檔視窗
 DOOR_TYPE_NAME = None      # 例如 "M_單扇門: 0915 x 2134mm"，None = 用第一個
 WINDOW_TYPE_NAME = None
-PIPE_TYPE_NAME = None      # 管類型名稱，None = 用第一個
+PIPE_TYPE_NAME = None      # 給水/熱水管類型名稱，None = 用第一個
+# 排水管類型名稱。接頭用哪個族群 (Y接、順水三通、45度彎頭) 是由這個管類型的
+# 「佈線偏好設定」決定，建議建一個排水專用的管類型，例如 "PVC 排水"。None = 同上
+DRAIN_PIPE_TYPE_NAME = None
 MAX_OPENING_DIST_M = 0.5   # 門窗插入點離牆超過這個距離就略過
 
 M_TO_FT = 1.0 / 0.3048
@@ -266,7 +269,8 @@ def connect_pipes(doc, pipes, systems, log):
     把端點落在同一點、同系統的管接起來：
       2 支、轉角   -> 彎頭 (NewElbowFitting)
       2 支、一直線但管徑不同 -> 漸縮 (NewTransitionFitting)
-      3 支         -> 三通 (NewTeeFitting)，一直線的兩支當主管
+      3 支         -> 三通 / Y接 (NewTeeFitting)，一直線的兩支當主管；
+                      實際放哪個族群由管類型的佈線偏好設定「接合」決定
       4 支         -> 四通 (NewCrossFitting)
     需要管類型的「佈線偏好設定」有對應的接頭族群。
     """
@@ -329,11 +333,16 @@ def create_pipes(doc, items, levels, log):
     if not items:
         return [], counts
     pipe_types = list(FilteredElementCollector(doc).OfClass(PipeType))
-    pipe_type = None
-    for t in pipe_types:
-        if PIPE_TYPE_NAME is None or type_name(t) == PIPE_TYPE_NAME:
-            pipe_type = t
-            break
+
+    def pick_type(name):
+        for t in pipe_types:
+            if name is None or type_name(t) == name:
+                return t
+        log.append("找不到管類型「%s」，改用第一個" % name)
+        return pipe_types[0] if pipe_types else None
+
+    pipe_type = pick_type(PIPE_TYPE_NAME)
+    drain_type = pick_type(DRAIN_PIPE_TYPE_NAME) if DRAIN_PIPE_TYPE_NAME else pipe_type
     if pipe_type is None:
         log.append("專案中沒有管類型，略過 %d 段管線 (請改用機電/給排水樣板，或先載入管類型)" % len(items))
         return [], counts
@@ -352,7 +361,8 @@ def create_pipes(doc, items, levels, log):
         if sys_type is None:
             log.append("專案中沒有管系統類型，略過管線")
             return pipes, counts
-        pipe = Pipe.Create(doc, sys_type.Id, pipe_type.Id, level.Id, p1, p2)
+        ptype = drain_type if item.get("system") == "sanitary" else pipe_type
+        pipe = Pipe.Create(doc, sys_type.Id, ptype.Id, level.Id, p1, p2)
         dia = pipe.get_Parameter(BuiltInParameter.RBS_PIPE_DIAMETER_PARAM)
         if dia is not None and not dia.IsReadOnly:
             dia.Set(ft(item.get("diameter_mm", 25) / 1000.0))

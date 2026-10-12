@@ -128,6 +128,52 @@ def collect_pipes(msp, prefixes, default_dia_mm):
     return pipes
 
 
+def make_wye_entries(pipes, tol=0.005):
+    """
+    排水橫支管不能 90 度直接接主管 (不能用三通)，要用 Y 接 + 45 度彎頭順著水流方向進去：
+
+        畫的:   支管              改成:  支管
+                 │                        │
+                 │                        └╲ 45 度
+        主管 ────┴────►          主管 ──────┴──►  (接點往下游移 s)
+
+    只處理「支管終點落在主管中間、而且接近垂直」的排水管；
+    s = max(15cm, 管徑 2 倍)，空間不夠就縮短，太短就不改。回傳 (新管線, 改了幾處)。
+    """
+    drains = [p for p in pipes if p["system"] == "sanitary"]
+    added, n = [], 0
+    for br in drains:
+        J = br["end"]
+        b = sub(J, br["start"])
+        lb = length(b)
+        b = (b[0] / lb, b[1] / lb)
+        for main in drains:
+            if main is br:
+                continue
+            a = main["start"]
+            d = sub(main["end"], a)
+            L = length(d)
+            d = (d[0] / L, d[1] / L)
+            t = dot(sub(J, a), d)
+            if not (tol < t < L - tol) or abs(cross(d, sub(J, a))) > tol:
+                continue  # 終點不在這支主管中間
+            if abs(dot(b, d)) > 0.5:
+                break  # 本來就斜接 (例如已畫成 45 度)，不改
+            # 支管從哪一側來 (垂直主管的單位向量，指向支管)
+            n_side = (-b[0], -b[1])
+            s = max(0.15, br["diameter_mm"] / 1000.0 * 2)
+            s = min(s, lb * 0.5, L - t - tol * 2)
+            if s < 0.05:
+                break
+            K = (J[0] + n_side[0] * s, J[1] + n_side[1] * s)       # 45 度彎頭位置
+            J2 = (J[0] + d[0] * s, J[1] + d[1] * s)                 # 新的 Y 接點 (往下游)
+            br["end"] = [round(K[0], 4), round(K[1], 4)]
+            added.append(dict(br, start=br["end"], end=[round(J2[0], 4), round(J2[1], 4)]))
+            n += 1
+            break
+    return pipes + added, n
+
+
 def split_at_junctions(pipes, tol=0.005):
     """
     支管接到主管「中間」時 (T 字形)，把主管在接點切成兩段，
@@ -321,6 +367,10 @@ def convert(path, args):
         "pipes": [dict(p, start=pt(p["start"]), end=pt(p["end"]), level="1F")
                   for p in collect_pipes(msp, tuple(up(args.pipe_prefix)), args.pipe_diameter)],
     }
+    if args.drain_junction == "wye":
+        data["pipes"], n_wye = make_wye_entries(data["pipes"])
+        if n_wye:
+            print("排水支管改成 Y 接 + 45 度彎頭：%d 處" % n_wye)
     data["pipes"] = split_at_junctions(data["pipes"])
     top = apply_drain_slope(data["pipes"], args.pipe_offset, args.drain_slope)
     if top is not None:
@@ -352,6 +402,8 @@ def main():
                     help="管中心離樓板的高度 (m)；排水管是指出口 (最低點) 的高度")
     ap.add_argument("--drain-slope", type=float, default=None,
                     help="排水坡度，例如 0.01 = 1/100 (預設：管徑75mm以下 1/50，以上 1/100)")
+    ap.add_argument("--drain-junction", choices=["wye", "tee"], default="wye",
+                    help="排水支管接主管的方式：wye = Y接+45度彎頭 (預設)；tee = 維持垂直 (用順水三通)")
     args = ap.parse_args()
 
     data = convert(args.dxf, args)
