@@ -101,10 +101,17 @@ def xyz(p, z=0.0):
 
 # ------------------------------------------------------------------ 樓層
 def get_or_create_levels(doc, levels):
-    existing = dict((lv.Name, lv) for lv in FilteredElementCollector(doc).OfClass(Level))
+    all_levels = list(FilteredElementCollector(doc).OfClass(Level))
+    existing = dict((lv.Name, lv) for lv in all_levels)
     result = {}
     for info in levels:
         lv = existing.get(info["name"])
+        if lv is None:
+            # 樣板裡已有同高程的樓層 (例如 FL1) 就直接沿用，不重複建立
+            for other in all_levels:
+                if abs(other.Elevation - ft(info["elevation"])) < ft(0.001):
+                    lv = other
+                    break
         if lv is None:
             lv = Level.Create(doc, ft(info["elevation"]))
             lv.Name = info["name"]
