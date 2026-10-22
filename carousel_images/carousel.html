@@ -1,0 +1,366 @@
+<title>換掉腦中的編劇</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=LXGW+WenKai+TC:wght@400;700&family=Noto+Serif+TC:wght@500;700;900&family=Noto+Sans+TC:wght@400;500&display=swap">
+<style>
+/* Layout: a stack of screenplay pages (4:5, IG carousel size) in a snap-scrolling strip; old lines struck in red pen, rewrites in the writer's hand. */
+:root {
+  --bg: #e9ebee;          /* page around the carousel */
+  --fg: #1d2026;
+  --muted: #5d6470;
+  --paper: #fbfbf8;       /* script page, fixed in both themes */
+  --ink: #1b1d22;
+  --pen: #c8322a;         /* red revision pen */
+  --hand: #1f4fa3;        /* blue ballpoint rewrite */
+  --rev-blue: #dfe9f6;    /* screenplay revision-page colours */
+  --rev-pink: #f7e1e6;
+  --rev-yellow: #f8f0c8;
+  --rev-green: #def0e1;
+  --rev-gold: #f3e2bd;
+  --line: #c9ccd2;
+  --f-display: "Noto Serif TC", "Songti TC", serif;
+  --f-script: "Courier Prime", "Courier New", monospace;
+  --f-hand: "LXGW WenKai TC", "Kaiti TC", "KaiTi", serif;
+  --f-body: "Noto Sans TC", "PingFang TC", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15171b; --fg: #e8eaee; --muted: #9aa1ad; --line: #333842; color-scheme: dark;
+} }
+:root[data-theme="dark"] { --bg: #15171b; --fg: #e8eaee; --muted: #9aa1ad; --line: #333842; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--f-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+}
+.wrap { max-width: 560px; margin: 0 auto; display: grid; gap: 18px; }
+header h1 { font-family: var(--f-display); font-weight: 700; font-size: 1.35rem; margin: 0; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); font-size: .9rem; }
+
+/* carousel */
+.strip {
+  display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory;
+  scrollbar-width: none; border-radius: 6px; outline: none;
+}
+.strip::-webkit-scrollbar { display: none; }
+.strip:focus-visible { box-shadow: 0 0 0 3px var(--hand); }
+
+.slide {
+  flex: 0 0 100%; scroll-snap-align: center; aspect-ratio: 4 / 5; max-width: 100%;
+  container-type: inline-size; position: relative; overflow: hidden;
+  background: var(--paper); color: var(--ink); border-radius: 6px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / .08), 0 8px 24px rgb(0 0 0 / .08);
+}
+.page { position: absolute; inset: 0; padding: 9cqi 9cqi 8cqi; display: flex; flex-direction: column; }
+.slide.blue  { background: var(--rev-blue); }
+.slide.pink  { background: var(--rev-pink); }
+.slide.yellow{ background: var(--rev-yellow); }
+.slide.green { background: var(--rev-green); }
+.slide.gold  { background: var(--rev-gold); }
+
+/* screenplay furniture */
+.slug { font-family: var(--f-script); font-weight: 700; font-size: 3.6cqi; letter-spacing: .02em; text-transform: uppercase; }
+.slug .zh { font-family: var(--f-body); font-weight: 500; text-transform: none; }
+.pageno { position: absolute; top: 5cqi; right: 7cqi; font-family: var(--f-script); font-size: 3.2cqi; }
+.revtag { position: absolute; top: 5cqi; left: 7cqi; font-family: var(--f-script); font-size: 2.8cqi; letter-spacing: .08em; opacity: .7; }
+.action { font-family: var(--f-body); font-size: 4.3cqi; line-height: 1.65; margin: 0; }
+.cue { font-family: var(--f-script); font-weight: 700; font-size: 3.6cqi; text-align: center; margin: 0 0 1cqi; letter-spacing: .04em; }
+.cue .zh { font-family: var(--f-body); font-weight: 500; }
+.paren { font-family: var(--f-script); font-size: 3.4cqi; text-align: center; margin: 0 0 1.5cqi; opacity: .75; }
+
+.old {
+  font-family: var(--f-display); font-weight: 500; font-size: 6cqi; line-height: 1.5;
+  text-align: center; margin: 0 6cqi; text-wrap: balance; position: relative;
+}
+.old s { text-decoration: none; background: linear-gradient(var(--pen), var(--pen)) no-repeat 0 55% / 100% .45cqi; }
+.new {
+  font-family: var(--f-hand); font-weight: 700; color: var(--hand);
+  font-size: 7.4cqi; line-height: 1.45; text-align: center; margin: 0 2cqi; text-wrap: balance;
+  transform: rotate(-1.2deg);
+}
+.arrow { font-family: var(--f-hand); color: var(--pen); font-size: 4cqi; text-align: center; margin: 4cqi 0 3cqi; }
+.note { font-family: var(--f-hand); color: var(--pen); font-size: 4cqi; position: absolute; bottom: 8cqi; right: 9cqi; transform: rotate(-3deg); text-align: right; }
+.grow { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+
+/* cover */
+.cover .title { font-family: var(--f-display); font-weight: 900; font-size: 12.5cqi; line-height: 1.2; margin: 0; text-wrap: balance; }
+.cover .title em { font-style: normal; background: linear-gradient(transparent 62%, #f2d64b 62%); }
+.cover .sub { font-family: var(--f-script); font-size: 3.8cqi; margin: 6cqi 0 0; line-height: 1.6; }
+.cover .sub .zh { font-family: var(--f-body); }
+.cover .written { font-family: var(--f-script); font-size: 3.4cqi; text-align: center; margin-top: auto; line-height: 1.8; }
+.cover .written b { font-family: var(--f-hand); font-size: 5cqi; color: var(--hand); font-weight: 700; }
+
+.big { font-family: var(--f-display); font-weight: 700; font-size: 7.4cqi; line-height: 1.4; margin: 0; text-wrap: balance; }
+.big .hl { background: linear-gradient(transparent 62%, #f2d64b 62%); }
+.thought { font-family: var(--f-hand); font-size: 5cqi; line-height: 1.55; margin: 0; padding-left: 4cqi; border-left: .6cqi solid var(--ink); }
+
+ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 5cqi; }
+ol.steps li { display: grid; grid-template-columns: 11cqi 1fr; gap: 3cqi; align-items: start; }
+ol.steps .k { font-family: var(--f-script); font-weight: 700; font-size: 3.4cqi; border: .4cqi solid var(--ink); text-align: center; padding: 1cqi 0; }
+ol.steps h3 { font-family: var(--f-display); font-weight: 700; font-size: 5.6cqi; margin: 0 0 1cqi; }
+ol.steps p { font-family: var(--f-body); font-size: 4cqi; line-height: 1.6; margin: 0; }
+ol.steps p .hand { font-family: var(--f-hand); color: var(--hand); font-weight: 700; font-size: 4.6cqi; }
+
+.fadeout { font-family: var(--f-script); font-weight: 700; font-size: 3.8cqi; text-align: right; margin-top: auto; }
+.cta { font-family: var(--f-body); font-size: 3.8cqi; line-height: 1.7; border-top: .3cqi dashed var(--ink); padding-top: 4cqi; margin-top: 6cqi; }
+
+/* controls */
+.controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.controls button {
+  font: 500 .95rem var(--f-body); color: var(--fg); background: transparent;
+  border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px; cursor: pointer;
+}
+.controls button:hover:not(:disabled) { border-color: var(--fg); }
+.controls button:disabled { opacity: .35; cursor: default; }
+.controls button:focus-visible { outline: 2px solid var(--hand); outline-offset: 2px; }
+.count { font-family: var(--f-script); font-variant-numeric: tabular-nums; color: var(--muted); }
+
+.caption { border-top: 1px solid var(--line); padding-top: 18px; display: grid; gap: 10px; }
+.caption h2 { font: 700 1rem var(--f-display); margin: 0; }
+.caption pre { white-space: pre-wrap; font: 400 .92rem/1.75 var(--f-body); margin: 0; color: var(--fg); }
+.caption-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+#copyBtn { font: 500 .85rem var(--f-body); color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+#copyBtn:focus-visible { outline: 2px solid var(--hand); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .strip { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>換掉腦中的編劇</h1>
+    <p>不內耗輪播圖 · 10 張 · 4:5（IG 尺寸）· 左右滑動或用方向鍵</p>
+  </header>
+
+  <div class="strip" id="strip" tabindex="0" aria-label="輪播圖，共 10 張">
+
+    <!-- 1 cover -->
+    <section class="slide cover" aria-label="第 1 張">
+      <div class="page">
+        <div class="slug">FADE IN:</div>
+        <div class="grow">
+          <p class="title">你腦中那齣戲，<br><em>該換編劇了。</em></p>
+          <p class="sub"><span class="zh">把 6 句最耗能的內心台詞，<br>改寫成放過自己的版本。</span></p>
+        </div>
+        <div class="written">WRITTEN BY<br><b>終於清醒的你</b></div>
+      </div>
+    </section>
+
+    <!-- 2 setup -->
+    <section class="slide" aria-label="第 2 張">
+      <div class="page">
+        <span class="pageno">2.</span>
+        <div class="slug">內景．你的腦袋 — 深夜 1:47</div>
+        <div class="grow" style="gap:5cqi">
+          <p class="action">訊息顯示「已讀」。<br>二十分鐘過去，對方沒有回。</p>
+          <p class="thought">他是不是生氣了？<br>我是不是說錯話？<br>我們是不是要結束了？</p>
+          <p class="action">三集已經演完。<br>現實裡，他只是在開會。</p>
+        </div>
+        <p class="big">內耗，是你一直在<span class="hl">幫別人寫台詞</span>。</p>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section class="slide" aria-label="第 3 張">
+      <div class="page">
+        <span class="pageno">3.</span>
+        <div class="slug">第一場．會議室</div>
+        <div class="grow">
+          <p class="cue"><span class="zh">你</span></p>
+          <p class="paren">(O.S. 內心)</p>
+          <p class="old"><s>「他這樣說，是不是在針對我？」</s></p>
+          <p class="arrow">↓ 改寫</p>
+          <p class="new">他的情緒是他的劇情，<br>我不用接戲。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section class="slide blue" aria-label="第 4 張">
+      <div class="page">
+        <span class="revtag">REVISED · BLUE</span>
+        <span class="pageno">4.</span>
+        <div class="slug" style="margin-top:4cqi">第二場．提案前一晚</div>
+        <div class="grow">
+          <p class="cue"><span class="zh">你</span></p>
+          <p class="paren">(O.S. 內心)</p>
+          <p class="old"><s>「萬一搞砸了怎麼辦？」</s></p>
+          <p class="arrow">↓ 改寫</p>
+          <p class="new">搞砸的只是這一場，<br>不是整部片。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5 -->
+    <section class="slide pink" aria-label="第 5 張">
+      <div class="page">
+        <span class="revtag">REVISED · PINK</span>
+        <span class="pageno">5.</span>
+        <div class="slug" style="margin-top:4cqi">第三場．滑手機的床上</div>
+        <div class="grow">
+          <p class="cue"><span class="zh">你</span></p>
+          <p class="paren">(O.S. 內心)</p>
+          <p class="old"><s>「為什麼大家都過得比我好？」</s></p>
+          <p class="arrow">↓ 改寫</p>
+          <p class="new">我在看別人的預告片，<br>卻拿幕後花絮來比。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section class="slide yellow" aria-label="第 6 張">
+      <div class="page">
+        <span class="revtag">REVISED · YELLOW</span>
+        <span class="pageno">6.</span>
+        <div class="slug" style="margin-top:4cqi">第四場．同事的請託</div>
+        <div class="grow">
+          <p class="cue"><span class="zh">你</span></p>
+          <p class="paren">(O.S. 內心)</p>
+          <p class="old"><s>「拒絕的話，他會不會討厭我？」</s></p>
+          <p class="arrow">↓ 改寫</p>
+          <p class="new">我說「不」，<br>是為了對真正重要的事說「好」。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section class="slide green" aria-label="第 7 張">
+      <div class="page">
+        <span class="revtag">REVISED · GREEN</span>
+        <span class="pageno">7.</span>
+        <div class="slug" style="margin-top:4cqi">第五場．洗澡時的回放</div>
+        <div class="grow">
+          <p class="cue"><span class="zh">你</span></p>
+          <p class="paren">(O.S. 內心)</p>
+          <p class="old"><s>「我那時候為什麼要那樣說？」</s></p>
+          <p class="arrow">↓ 改寫</p>
+          <p class="new">那一場已經殺青了。<br>現在，Action。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8 -->
+    <section class="slide gold" aria-label="第 8 張">
+      <div class="page">
+        <span class="revtag">REVISED · GOLDENROD</span>
+        <span class="pageno">8.</span>
+        <div class="slug" style="margin-top:4cqi">第六場．一直沒開始的計畫</div>
+        <div class="grow">
+          <p class="cue"><span class="zh">你</span></p>
+          <p class="paren">(O.S. 內心)</p>
+          <p class="old"><s>「等我想清楚、準備好再開始。」</s></p>
+          <p class="arrow">↓ 改寫</p>
+          <p class="new">劇本都是邊拍邊改的。<br>先拍第一場。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9 director's notes -->
+    <section class="slide" aria-label="第 9 張">
+      <div class="page">
+        <span class="pageno">9.</span>
+        <div class="slug">導演筆記．下次腦中又開演時</div>
+        <div class="grow">
+          <ol class="steps">
+            <li><span class="k">01</span><div><h3>喊「卡！」</h3><p>發現自己又在腦內重播，先叫停。光是察覺，就已經停下一半。</p></div></li>
+            <li><span class="k">02</span><div><h3>對劇本</h3><p>問自己一句：這是<b>發生的事實</b>，還是<b>我編的劇情</b>？</p></div></li>
+            <li><span class="k">03</span><div><h3>改台詞</h3><p>換成你會對好朋友說的那句：<br><span class="hand">「你已經很努力了。」</span></p></div></li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10 ending -->
+    <section class="slide" aria-label="第 10 張">
+      <div class="page">
+        <span class="pageno">10.</span>
+        <div class="slug">外景．明天早上 — 晴</div>
+        <div class="grow" style="gap:6cqi">
+          <p class="big">你是主角，<br>也是編劇。</p>
+          <p class="action">別再讓那個焦慮的配角搶戲。<br>今天的台詞，由你來寫。</p>
+        </div>
+        <p class="cta">📌 收藏起來，下次腦中開演時翻出來看<br>💬 留言告訴我：你最常演的是哪一句？</p>
+        <div class="fadeout" style="margin-top:4cqi">FADE OUT.</div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="controls">
+    <button id="prev" type="button" aria-label="上一張">← 上一張</button>
+    <span class="count" id="count" aria-live="polite">1 / 10</span>
+    <button id="next" type="button" aria-label="下一張">下一張 →</button>
+  </div>
+
+  <section class="caption">
+    <div class="caption-head">
+      <h2>貼文文案</h2>
+      <button id="copyBtn" type="button">複製文案</button>
+    </div>
+<pre id="captionText">凌晨一點四十七分，訊息顯示已讀。
+二十分鐘沒回，你腦中已經演完三集。
+
+內耗不是你太脆弱，
+是你一直在幫別人寫台詞，還替他們演完。
+
+這次換你當編劇。
+我把 6 句最耗能的內心台詞，改寫成放過自己的版本 👉 往左滑
+
+最後一張是「導演筆記」，
+下次腦中又開演的時候，照著三步驟做：喊卡、對劇本、改台詞。
+
+你最常演的是哪一句？留言告訴我，我幫你改寫。
+
+#不內耗 #停止內耗 #自我成長 #情緒管理 #心理健康 #焦慮 #療癒語錄</pre>
+  </section>
+</div>
+
+<script>
+(function () {
+  const strip = document.getElementById('strip');
+  const slides = [...strip.children];
+  const prev = document.getElementById('prev');
+  const next = document.getElementById('next');
+  const count = document.getElementById('count');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let i = 0;
+
+  function current() {
+    const w = strip.clientWidth + 14;
+    return Math.max(0, Math.min(slides.length - 1, Math.round(strip.scrollLeft / w)));
+  }
+  function render() {
+    count.textContent = (i + 1) + ' / ' + slides.length;
+    prev.disabled = i === 0;
+    next.disabled = i === slides.length - 1;
+  }
+  function go(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    strip.scrollTo({ left: slides[i].offsetLeft - strip.offsetLeft, behavior: reduce ? 'auto' : 'smooth' });
+    render();
+  }
+  let t;
+  strip.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(() => { i = current(); render(); }, 60); });
+  prev.addEventListener('click', () => go(i - 1));
+  next.addEventListener('click', () => go(i + 1));
+  document.addEventListener('keydown', e => {
+    if (e.target.closest && e.target.closest('pre')) return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); go(i + 1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); go(i - 1); }
+  });
+  render();
+
+  const btn = document.getElementById('copyBtn');
+  const text = document.getElementById('captionText');
+  btn.addEventListener('click', () => {
+    const done = () => { btn.textContent = '已複製'; setTimeout(() => btn.textContent = '複製文案', 1600); };
+    const fallback = () => {
+      const r = document.createRange(); r.selectNodeContents(text);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      btn.textContent = '已選取，請按複製';
+    };
+    try { navigator.clipboard.writeText(text.textContent).then(done, fallback); } catch (e) { fallback(); }
+  });
+})();
+</script>
