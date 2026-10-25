@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>台北101 3D 模型</title>
+<style>
+  :root {
+    --panel: rgba(12, 18, 32, 0.72);
+    --text: #eef3fb;
+    --muted: #9fb0c8;
+    --accent: #e0b04a;
+    --line: rgba(255, 255, 255, 0.14);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0a1022; color: var(--text);
+    font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif; }
+  canvas { display: block; touch-action: none; }
+  #hud {
+    position: fixed; top: 16px; left: 16px; width: 300px; max-width: calc(100vw - 32px);
+    padding: 16px 18px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); user-select: none;
+  }
+  h1 { margin: 0 0 2px; font-size: 18px; letter-spacing: 0.04em; }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+  #clock { font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  #date { color: var(--muted); font-size: 13px; margin: 2px 0 12px; }
+  .row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 5px 0;
+    border-top: 1px solid var(--line); }
+  .row span:first-child { color: var(--muted); }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px;
+    vertical-align: -1px; box-shadow: 0 0 8px currentColor; }
+  .modes { display: flex; gap: 6px; margin: 12px 0 8px; }
+  button {
+    flex: 1; padding: 7px 0; border-radius: 8px; border: 1px solid var(--line); background: transparent;
+    color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+  }
+  button.on { background: var(--accent); border-color: var(--accent); color: #1a1405; font-weight: 600; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  #hint { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); font-size: 12px;
+    color: var(--muted); background: var(--panel); padding: 6px 12px; border-radius: 999px; white-space: nowrap; }
+  @media (max-width: 520px) {
+    #hud { padding: 12px 14px; top: auto; bottom: 16px; }
+    .sub, #hint { display: none; }
+    #clock { font-size: 26px; }
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="hud">
+  <h1>台北101 即時 3D 微縮模型</h1>
+  <div class="sub">508 公尺 · 地上 101 層 · 依台北時間即時變換日夜</div>
+  <div id="clock">--:--:--</div>
+  <div id="date">----/--/--</div>
+  <div class="row"><span>時段</span><span id="phase">-</span></div>
+  <div class="row"><span>太陽高度角</span><span id="sun">-</span></div>
+  <div class="row"><span>今日點燈色</span><span id="color">-</span></div>
+  <div class="modes">
+    <button id="mLive" class="on">即時</button>
+    <button id="mFast">快轉</button>
+    <button id="mSpin" class="on">自轉</button>
+  </div>
+  <input id="slider" type="range" min="0" max="24" step="0.05" value="12" aria-label="台北時間">
+</div>
+<div id="hint">拖曳旋轉 · 滾輪/雙指縮放 · 拖動滑桿調整時間</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// 比例：1 單位 = 10 公尺
+const LAT = 25.0339, LON = 121.5645;
+// 台北 101 每日點燈顏色（週日～週六）
+const WEEK = [
+  { name: '紫', hex: 0xa040ff }, { name: '紅', hex: 0xff2a2a }, { name: '橙', hex: 0xff8a1a },
+  { name: '黃', hex: 0xffd21a }, { name: '綠', hex: 0x2ee05a }, { name: '藍', hex: 0x2a7bff },
+  { name: '靛', hex: 0x4b3cff },
+];
+const WEEK_NAMES = '日一二三四五六';
+
+// ---------- 場景 ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x8ec5ea, 90, 260);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 1000);
+camera.position.set(52, 30, 58).multiplyScalar(Math.max(1, 0.85 / camera.aspect));   // 直式螢幕拉遠
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, camera.aspect < 0.8 ? 6 : 20, 0);   // 直式螢幕讓模型往上留空間給面板
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.6;
+controls.minDistance = 12;
+controls.maxDistance = 160;
+controls.maxPolarAngle = Math.PI * 0.49;
+
+const hemi = new THREE.HemisphereLight(0xcfe6ff, 0x3a3328, 0.8);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff4e0, 2.5);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 1, far: 220 });
+sun.shadow.bias = -0.0004;
+scene.add(sun, sun.target);
+const moon = new THREE.DirectionalLight(0x6f8cff, 0.0);
+moon.position.set(-40, 60, -20);
+scene.add(moon);
+
+// ---------- 貼圖 ----------
+function canvasTex(w, h, draw) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  return t;
+}
+// 帷幕玻璃：寬 = 4 個立面 × 12 窗，高 = 8 層
+const FLOORS_PER_TEX = 8, COLS = 12;
+const facadeTex = canvasTex(4 * COLS * 16, FLOORS_PER_TEX * 32, (g, w, h) => {
+  const fh = h / FLOORS_PER_TEX, cw = w / (4 * COLS);
+  for (let f = 0; f < FLOORS_PER_TEX; f++) {
+    const y = f * fh;
+    const gr = g.createLinearGradient(0, y, 0, y + fh);
+    gr.addColorStop(0, '#5f9a92'); gr.addColorStop(1, '#2c5c5a');
+    g.fillStyle = gr; g.fillRect(0, y, w, fh);
+    g.fillStyle = '#c9d6d2'; g.fillRect(0, y + fh - 4, w, 4);      // 樓板
+  }
+  g.fillStyle = 'rgba(210,225,220,0.75)';
+  for (let x = 0; x < w; x += cw) g.fillRect(x, 0, 2, h);          // 豎框
+});
+const facadeGlow = canvasTex(4 * COLS * 16, FLOORS_PER_TEX * 32, (g, w, h) => {
+  const fh = h / FLOORS_PER_TEX, cw = w / (4 * COLS);
+  g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+  for (let f = 0; f < FLOORS_PER_TEX; f++) for (let c = 0; c < 4 * COLS; c++) {
+    if (Math.random() < 0.45) {
+      const k = 0.55 + Math.random() * 0.45;
+      g.fillStyle = `rgba(255,${200 + Math.random() * 40 | 0},140,${k})`;
+      g.fillRect(c * cw + 3, f * fh + 3, cw - 5, fh - 9);
+    }
+  }
+});
+const cityTex = canvasTex(64, 128, (g, w, h) => {
+  g.fillStyle = '#b9b4aa'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#4b5966';
+  for (let y = 6; y < h - 4; y += 12) for (let x = 5; x < w - 4; x += 11) g.fillRect(x, y, 7, 7);
+});
+const cityGlow = canvasTex(64, 128, (g, w, h) => {
+  g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+  for (let y = 6; y < h - 4; y += 12) for (let x = 5; x < w - 4; x += 11)
+    if (Math.random() < 0.5) { g.fillStyle = Math.random() < 0.7 ? '#ffd9a0' : '#d8ecff'; g.fillRect(x, y, 7, 7); }
+});
+
+// ---------- 材質 ----------
+const gold = new THREE.MeshStandardMaterial({ color: 0xd8a93a, metalness: 1, roughness: 0.32, envMapIntensity: 2 });
+const steel = new THREE.MeshStandardMaterial({ color: 0x9aa7ad, metalness: 0.8, roughness: 0.35, envMapIntensity: 1.5 });
+const capMat = new THREE.MeshStandardMaterial({ color: 0x7f9590, metalness: 0.5, roughness: 0.5 });
+const glowMats = [];   // 夜間發光的材質
+const lightLines = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 });
+
+function facadeMat(floors, seed) {
+  const map = facadeTex.clone(), em = facadeGlow.clone();
+  for (const t of [map, em]) { t.repeat.set(1, floors / FLOORS_PER_TEX); t.offset.set(seed, 0); t.needsUpdate = true; }
+  const m = new THREE.MeshStandardMaterial({
+    map, emissiveMap: em, emissive: 0xffffff, emissiveIntensity: 0,
+    metalness: 0.55, roughness: 0.22, envMapIntensity: 1.6, flatShading: true,
+  });
+  glowMats.push(m);
+  return m;
+}
+
+// ---------- 台北 101 ----------
+const tower = new THREE.Group();
+scene.add(tower);
+
+// 方形截錐（上下寬度不同），hw = 半寬
+function frustum(y0, h, hwBottom, hwTop, floors, mat) {
+  const g = new THREE.CylinderGeometry(hwTop * Math.SQRT2, hwBottom * Math.SQRT2, h, 4, 1, false, Math.PI / 4);
+  g.translate(0, y0 + h / 2, 0);
+  const mesh = new THREE.Mesh(g, floors ? [facadeMat(floors, Math.random()), capMat, capMat] : mat);
+  mesh.castShadow = mesh.receiveShadow = true;
+  tower.add(mesh);
+  tower.add(new THREE.LineSegments(new THREE.EdgesGeometry(g), lightLines));
+  return mesh;
+}
+
+// 裙樓底座（1–25 層，向內收）
+frustum(0, 9.4, 3.3, 2.2, 24);
+// 銅錢裝飾層（26–27 層）
+frustum(9.4, 0.7, 2.2, 2.3, 2);
+
+// 古錢幣（外圓內方）
+const coinShape = new THREE.Shape();
+coinShape.absarc(0, 0, 0.75, 0, Math.PI * 2, false);
+const hole = new THREE.Path();
+hole.moveTo(-0.22, -0.22); hole.lineTo(0.22, -0.22); hole.lineTo(0.22, 0.22); hole.lineTo(-0.22, 0.22); hole.closePath();
+coinShape.holes.push(hole);
+const coinGeo = new THREE.ExtrudeGeometry(coinShape, { depth: 0.1, bevelEnabled: true, bevelSize: 0.04, bevelThickness: 0.04, bevelSegments: 2, curveSegments: 40 });
+const podiumTilt = Math.atan((3.3 - 2.2) / 9.4);
+for (let k = 0; k < 4; k++) {
+  const pivot = new THREE.Group();
+  pivot.rotation.y = k * Math.PI / 2;
+  const coin = new THREE.Mesh(coinGeo, gold);
+  const y = 8.2, hw = 3.3 - (3.3 - 2.2) * (y / 9.4);
+  coin.position.set(0, y, hw + 0.02);
+  coin.rotation.x = -podiumTilt;
+  coin.castShadow = true;
+  pivot.add(coin);
+  tower.add(pivot);
+}
+
+// 八節「花開富貴」斗形量體（每節 8 層）
+const SEC_Y0 = 10.1, SEC_H = 3.38, SEC_B = 2.0, SEC_T = 2.5;
+const ornamentGeo = new THREE.BoxGeometry(0.16, 0.14, 0.75);
+for (let i = 0; i < 8; i++) {
+  const y0 = SEC_Y0 + i * SEC_H;
+  frustum(y0, SEC_H, SEC_B, SEC_T, 8);
+  // 每節頂端四角的金色如意 / 龍形裝飾
+  for (let k = 0; k < 4; k++) {
+    const a = Math.PI / 4 + k * Math.PI / 2;
+    const orn = new THREE.Mesh(ornamentGeo, gold);
+    const r = SEC_T * Math.SQRT2 + 0.15;
+    orn.position.set(Math.sin(a) * r, y0 + SEC_H - 0.25, Math.cos(a) * r);
+    orn.rotation.y = a;
+    orn.rotation.x = -0.5;
+    tower.add(orn);
+  }
+}
+// 頂部塔樓（91–101 層）逐層收分
+const TOP0 = SEC_Y0 + 8 * SEC_H;               // ≈ 37.1
+frustum(TOP0, 0.35, 1.9, 1.9, 0, capMat);
+frustum(TOP0 + 0.35, 2.2, 1.55, 1.6, 5);
+frustum(TOP0 + 2.55, 0.25, 1.75, 1.75, 0, capMat);
+frustum(TOP0 + 2.8, 2.6, 1.2, 1.25, 6);
+frustum(TOP0 + 5.4, 0.25, 1.35, 1.35, 0, capMat);
+frustum(TOP0 + 5.65, 1.6, 0.85, 0.75, 3);
+const ROOF = TOP0 + 7.25;                        // ≈ 44.9（449 公尺屋頂）
+frustum(ROOF, 0.6, 0.75, 0.35, 0, steel);
+
+// 塔尖（至 508 公尺）
+const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.2, 5.6, 16), steel);
+spire.position.y = ROOF + 0.6 + 2.8;
+spire.castShadow = true;
+tower.add(spire);
+for (let i = 0; i < 6; i++) {
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.22 - i * 0.022, 0.035, 8, 24), steel);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = ROOF + 1.0 + i * 0.8;
+  tower.add(ring);
+}
+const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xff2020 }));
+beacon.position.y = 50.8;
+tower.add(beacon);
+
+// ---------- 展示台與信義區街景 ----------
+const BASE_R = 30;
+const plinth = new THREE.Mesh(new THREE.CylinderGeometry(BASE_R + 0.8, BASE_R + 1.6, 2, 96),
+  new THREE.MeshStandardMaterial({ color: 0x3b2618, roughness: 0.55, metalness: 0.1 }));
+plinth.position.y = -1.01;
+plinth.receiveShadow = true;
+scene.add(plinth);
+const ground = new THREE.Mesh(new THREE.CircleGeometry(BASE_R, 96),
+  new THREE.MeshStandardMaterial({ color: 0x4a4d52, roughness: 0.95 }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+const plaza = new THREE.Mesh(new THREE.CircleGeometry(7, 64),
+  new THREE.MeshStandardMaterial({ color: 0xb8b1a3, roughness: 0.9 }));
+plaza.rotation.x = -Math.PI / 2;
+plaza.position.y = 0.01;
+plaza.receiveShadow = true;
+scene.add(plaza);
+
+// 街廓建築（InstancedMesh）
+const cityMat = new THREE.MeshStandardMaterial({ map: cityTex, emissiveMap: cityGlow, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.75 });
+glowMats.push(cityMat);
+const spots = [];
+const STEP = 3.4;
+for (let x = -BASE_R; x <= BASE_R; x += STEP) for (let z = -BASE_R; z <= BASE_R; z += STEP) {
+  const d = Math.hypot(x, z);
+  if (d < 8.5 || d > BASE_R - 2) continue;
+  if (Math.abs(x) < 1.2 || Math.abs(z - 10.2) < 1.2) continue;    // 預留大道
+  const tall = Math.random() < 0.06 && d > 13 && d < 22;
+  const h = tall ? 7 + Math.random() * 7 : 0.6 + Math.random() * (d < 16 ? 4 : 2.2);
+  spots.push({ x, z, w: 1.6 + Math.random() * 0.9, dpt: 1.6 + Math.random() * 0.9, h });
+}
+const city = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), cityMat, spots.length);
+const mtx = new THREE.Matrix4(), col = new THREE.Color();
+spots.forEach((s, i) => {
+  mtx.compose(new THREE.Vector3(s.x, s.h / 2, s.z), new THREE.Quaternion(), new THREE.Vector3(s.w, s.h, s.dpt));
+  city.setMatrixAt(i, mtx);
+  city.setColorAt(i, col.setHSL(0.08 + Math.random() * 0.5, 0.08, 0.6 + Math.random() * 0.3));
+});
+city.castShadow = city.receiveShadow = true;
+scene.add(city);
+
+// 行道樹
+const treeCount = 70;
+const trees = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.42, 1),
+  new THREE.MeshStandardMaterial({ color: 0x3f7a3a, roughness: 0.9, flatShading: true }), treeCount);
+for (let i = 0; i < treeCount; i++) {
+  const a = (i / treeCount) * Math.PI * 2, r = 5.4 + (i % 2) * 1.0;
+  mtx.compose(new THREE.Vector3(Math.cos(a) * r, 0.45, Math.sin(a) * r), new THREE.Quaternion(),
+    new THREE.Vector3(1, 1 + Math.random() * 0.4, 1));
+  trees.setMatrixAt(i, mtx);
+}
+trees.castShadow = true;
+scene.add(trees);
+
+// 星空
+const starGeo = new THREE.BufferGeometry();
+const starPos = new Float32Array(1500 * 3);
+for (let i = 0; i < 1500; i++) {
+  const v = new THREE.Vector3().randomDirection();
+  v.y = Math.abs(v.y) + 0.05;
+  v.normalize().multiplyScalar(420);
+  starPos.set([v.x, v.y, v.z], i * 3);
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, fog: false });
+scene.add(new THREE.Points(starGeo, starMat));
+
+// ---------- 後製光暈 ----------
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.5, 0.82);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ---------- 台北時間與太陽位置 ----------
+const TPE = 8 * 3600e3;                         // UTC+8，無日光節約時間
+function taipei(ms) {
+  const d = new Date(ms + TPE);
+  return { y: d.getUTCFullYear(), mo: d.getUTCMonth(), d: d.getUTCDate(), wd: d.getUTCDay(),
+    h: d.getUTCHours(), mi: d.getUTCMinutes(), s: d.getUTCSeconds() };
+}
+function sunPosition(ms) {
+  const t = taipei(ms);
+  const n = (Date.UTC(t.y, t.mo, t.d) - Date.UTC(t.y, 0, 0)) / 864e5;
+  const decl = THREE.MathUtils.degToRad(23.44) * Math.sin(2 * Math.PI * (284 + n) / 365);
+  const B = 2 * Math.PI * (n - 81) / 364;
+  const eot = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B);   // 分鐘
+  const utcH = ((ms / 3600e3) % 24 + 24) % 24;
+  const solarH = utcH + LON / 15 + eot / 60;
+  const H = THREE.MathUtils.degToRad(15 * (solarH - 12));
+  const phi = THREE.MathUtils.degToRad(LAT);
+  const alt = Math.asin(Math.sin(phi) * Math.sin(decl) + Math.cos(phi) * Math.cos(decl) * Math.cos(H));
+  const az = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(decl) * Math.cos(phi)); // 由南向西
+  // 場景座標：+x 東、+z 南、+y 上
+  return { alt, dir: new THREE.Vector3(-Math.sin(az) * Math.cos(alt), Math.sin(alt), Math.cos(az) * Math.cos(alt)) };
+}
+
+// ---------- 介面 ----------
+const $ = id => document.getElementById(id);
+let mode = 'live', simMs = Date.now();
+const setMode = m => { mode = m; $('mLive').classList.toggle('on', m === 'live'); $('mFast').classList.toggle('on', m === 'fast'); };
+$('mLive').onclick = () => setMode('live');
+$('mFast').onclick = () => setMode(mode === 'fast' ? 'live' : 'fast');
+$('mSpin').onclick = () => { controls.autoRotate = !controls.autoRotate; $('mSpin').classList.toggle('on', controls.autoRotate); };
+$('slider').oninput = e => {
+  const t = taipei(simMs);
+  simMs = Date.UTC(t.y, t.mo, t.d) - TPE + parseFloat(e.target.value) * 3600e3;
+  setMode('manual');
+};
+const pad = v => String(v).padStart(2, '0');
+
+// ---------- 動畫 ----------
+const C = (h) => new THREE.Color(h);
+const SKY_DAY = C(0x8ec5ea), SKY_DUSK = C(0xf0956a), SKY_NIGHT = C(0x0a1022);
+const SUN_LOW = C(0xffa060), SUN_HIGH = C(0xfff4e0);
+const sky = new THREE.Color(), weekColor = new THREE.Color(), wash = new THREE.Color();
+const ss = THREE.MathUtils.smoothstep;
+const clock = new THREE.Clock();
+let lastHud = 0;
+
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.1), now = clock.elapsedTime;
+  if (mode === 'live') simMs = Date.now();
+  else if (mode === 'fast') simMs += dt * 1800e3;   // 1 秒 = 30 分鐘
+
+  const { alt, dir } = sunPosition(simMs);
+  const e = THREE.MathUtils.radToDeg(alt);
+  const day = ss(e, -6, 10), night = 1 - ss(e, -8, 3);
+  const dusk = Math.max(0, 1 - Math.abs(e - 1) / 9);
+
+  sky.copy(SKY_NIGHT).lerp(SKY_DAY, day).lerp(SKY_DUSK, dusk * 0.55);
+  scene.background = sky;
+  scene.fog.color.copy(sky);
+
+  sun.position.copy(dir).multiplyScalar(110);
+  sun.intensity = 2.8 * ss(e, -1, 12);
+  sun.color.copy(SUN_LOW).lerp(SUN_HIGH, ss(e, 0, 25));
+  hemi.intensity = 0.12 + 0.85 * day;
+  scene.environmentIntensity = 0.06 + 0.94 * day;
+  moon.intensity = 0.35 * night;
+  starMat.opacity = night * 0.9;
+
+  const t = taipei(simMs);
+  const w = WEEK[t.wd];
+  weekColor.setHex(w.hex);
+  lightLines.color.copy(weekColor).multiplyScalar(1 + 6 * night);
+  lightLines.opacity = night;
+  wash.setRGB(1, 0.92, 0.8).lerp(weekColor, 0.6);
+  for (const m of glowMats) {
+    m.emissiveIntensity = night * (m === cityMat ? 0.9 : 1.3);
+    if (m !== cityMat) m.emissive.copy(wash);           // 立面映上當日燈色
+  }
+  bloom.strength = 0.1 + 0.6 * night;
+  beacon.material.color.setRGB(Math.sin(now * 3) > 0.2 ? 4 : 0.3, 0.05, 0.05);
+  tower.rotation.z = Math.sin(now * 0.7) * 0.0015;      // 微風擺動
+
+  if (now - lastHud > 0.2) {
+    lastHud = now;
+    $('clock').textContent = `${pad(t.h)}:${pad(t.mi)}:${pad(t.s)}`;
+    $('date').textContent = `台北時間 ${t.y}/${pad(t.mo + 1)}/${pad(t.d)}（${WEEK_NAMES[t.wd]}）${mode === 'live' ? '' : mode === 'fast' ? '· 快轉中' : '· 手動'}`;
+    $('phase').textContent = e > 6 ? '白天' : e > -0.8 ? (t.h < 12 ? '日出' : '黃昏') : e > -6 ? '暮光' : '夜晚';
+    $('sun').textContent = `${e.toFixed(1)}°`;
+    $('color').innerHTML = `<span class="swatch" style="background:#${weekColor.getHexString()};color:#${weekColor.getHexString()}"></span>星期${WEEK_NAMES[t.wd]} · ${w.name}色`;
+    if (mode !== 'manual') $('slider').value = t.h + t.mi / 60;
+  }
+
+  controls.update();
+  composer.render();
+  requestAnimationFrame(frame);
+}
+frame();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
