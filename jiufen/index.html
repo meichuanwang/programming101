@@ -354,7 +354,7 @@ for (let x = -32; x < 28; x += 1.7) for (const s of [-1, 1]) {
   if (Math.abs(x - STAIR_X) < 2) continue;
   lanternPts.push(new THREE.Vector3(x, streetY(x) + 2.6, STREET_Z + s * 0.6));
 }
-const lanternMat = new THREE.MeshStandardMaterial({ color: 0xc8281e, emissive: 0xff3218, emissiveIntensity: 0.15, roughness: 0.5 });
+const lanternMat = new THREE.MeshStandardMaterial({ color: 0xc8281e, emissive: 0xff1a0a, emissiveIntensity: 0.15, roughness: 0.5 });
 const lanterns = new THREE.InstancedMesh(new THREE.SphereGeometry(0.3, 14, 10), lanternMat, lanternPts.length);
 const capMat = new THREE.MeshStandardMaterial({ color: 0x1a1410 });
 const caps = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.16, 0.6, 8), capMat, lanternPts.length);
@@ -495,9 +495,9 @@ function frame() {
 
   // 天色一暗燈籠就亮
   const lit = 1 - ss(e, -2, 6);
-  lanternMat.emissiveIntensity = 0.15 + 3.2 * lit;
+  lanternMat.emissiveIntensity = 0.15 + 1.5 * lit;
   for (const m of glowMats) m.emissiveIntensity = night * 1.0;
-  for (const l of glowLights) l.intensity = 40 * lit;
+  for (const l of glowLights) l.intensity = 22 * lit;
   bloom.strength = 0.15 + 0.55 * lit + 0.25 * dusk;
 
   if (rainy) {
