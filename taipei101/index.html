@@ -39,6 +39,12 @@
   input[type=range] { width: 100%; accent-color: var(--accent); }
   #hint { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); font-size: 12px;
     color: var(--muted); background: var(--panel); padding: 6px 12px; border-radius: 999px; white-space: nowrap; }
+  #countdown {
+    position: fixed; top: 22%; left: 50%; transform: translate(-50%, -50%); pointer-events: none;
+    font-size: clamp(48px, 14vw, 140px); font-weight: 800; letter-spacing: 0.04em; white-space: nowrap;
+    color: #fff6dc; text-shadow: 0 0 18px rgba(255, 190, 80, 0.9), 0 0 48px rgba(255, 120, 40, 0.6);
+  }
+  #countdown.greet { font-size: clamp(32px, 8vw, 84px); }
   @media (max-width: 520px) {
     #hud { padding: 12px 14px; top: auto; bottom: 16px; }
     .sub, #hint { display: none; }
@@ -64,10 +70,12 @@
   <div class="modes">
     <button id="mLive" class="on">即時</button>
     <button id="mFast">快轉</button>
+    <button id="mNY">跨年</button>
     <button id="mSpin" class="on">自轉</button>
   </div>
   <input id="slider" type="range" min="0" max="24" step="0.05" value="12" aria-label="台北時間">
 </div>
+<div id="countdown" hidden></div>
 <div id="hint">拖曳旋轉 · 滾輪/雙指縮放 · 拖動滑桿調整時間</div>
 
 <script type="module">
@@ -342,6 +350,79 @@ starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
 const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, fog: false });
 scene.add(new THREE.Points(starGeo, starMat));
 
+// ---------- 跨年煙火（粒子池） ----------
+const FW_MAX = 16000;
+const fwPos = new Float32Array(FW_MAX * 3), fwCol = new Float32Array(FW_MAX * 3);
+const fwVel = new Float32Array(FW_MAX * 3), fwBase = new Float32Array(FW_MAX * 3);
+const fwLife = new Float32Array(FW_MAX), fwLife0 = new Float32Array(FW_MAX);
+const fwGeo = new THREE.BufferGeometry();
+fwGeo.setAttribute('position', new THREE.BufferAttribute(fwPos, 3).setUsage(THREE.DynamicDrawUsage));
+fwGeo.setAttribute('color', new THREE.BufferAttribute(fwCol, 3).setUsage(THREE.DynamicDrawUsage));
+const sparkTex = canvasTex(64, 64, (g, w, h) => {
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.3, 'rgba(255,255,255,0.75)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+});
+const fireworks = new THREE.Points(fwGeo, new THREE.PointsMaterial({
+  size: 0.55, map: sparkTex, vertexColors: true, transparent: true, depthWrite: false,
+  blending: THREE.AdditiveBlending, fog: false,
+}));
+fireworks.frustumCulled = false;
+scene.add(fireworks);
+const FW_COLORS = [0xff3b3b, 0xffc83a, 0x3bff8a, 0x3bb4ff, 0xc04bff, 0xff7a2a, 0xffffff].map(h => new THREE.Color(h));
+const tmpV = new THREE.Vector3();
+let fwNext = 0, fwAlive = 0;
+
+function spark(o, v, c, life) {
+  const i = fwNext, j = i * 3;
+  fwNext = (fwNext + 1) % FW_MAX;
+  fwPos[j] = o.x; fwPos[j + 1] = o.y; fwPos[j + 2] = o.z;
+  fwVel[j] = v.x; fwVel[j + 1] = v.y; fwVel[j + 2] = v.z;
+  fwBase[j] = c.r; fwBase[j + 1] = c.g; fwBase[j + 2] = c.b;
+  fwLife[i] = fwLife0[i] = life;
+}
+const pick = () => FW_COLORS[Math.random() * FW_COLORS.length | 0];
+// 空中球形煙火
+function shell() {
+  const a = Math.random() * Math.PI * 2, r = 5 + Math.random() * 9;
+  const o = new THREE.Vector3(Math.cos(a) * r, 18 + Math.random() * 30, Math.sin(a) * r);
+  const c1 = pick(), c2 = Math.random() < 0.4 ? pick() : c1, speed = 4.5 + Math.random() * 3;
+  for (let k = 0; k < 220; k++) {
+    tmpV.randomDirection().multiplyScalar(speed * (0.85 + Math.random() * 0.15));
+    spark(o, tmpV, k % 2 ? c1 : c2, 1.6 + Math.random() * 0.9);
+  }
+}
+// 台北 101 招牌：從每一節四面向外噴射
+function sideBurst(sec) {
+  const y = SEC_Y0 + sec * SEC_H + SEC_H * 0.55, c = Math.random() < 0.5 ? FW_COLORS[1] : pick();
+  for (let f = 0; f < 4; f++) {
+    const a = f * Math.PI / 2, n = new THREE.Vector3(Math.sin(a), 0, Math.cos(a));
+    const o = n.clone().multiplyScalar(2.4).setY(y);
+    for (let k = 0; k < 60; k++) {
+      tmpV.randomDirection().multiplyScalar(0.6).add(n).setY(tmpV.y + 0.25).normalize().multiplyScalar(3.5 + Math.random() * 3.5);
+      spark(o, tmpV, c, 0.9 + Math.random() * 0.8);
+    }
+  }
+}
+function updateFireworks(dt) {
+  const drag = Math.pow(0.4, dt);
+  fwAlive = 0;
+  for (let i = 0; i < FW_MAX; i++) {
+    if (fwLife[i] <= 0) continue;
+    const j = i * 3;
+    fwLife[i] -= dt;
+    if (fwLife[i] <= 0) { fwCol[j] = fwCol[j + 1] = fwCol[j + 2] = 0; continue; }
+    fwAlive++;
+    fwVel[j] *= drag; fwVel[j + 2] *= drag;
+    fwVel[j + 1] = fwVel[j + 1] * drag - 2.4 * dt;
+    fwPos[j] += fwVel[j] * dt; fwPos[j + 1] += fwVel[j + 1] * dt; fwPos[j + 2] += fwVel[j + 2] * dt;
+    const k = fwLife[i] / fwLife0[i];
+    const b = 3 * k * (k < 0.35 ? (Math.random() < 0.5 ? 1.8 : 0.15) : 1);   // 尾段閃爍
+    fwCol[j] = fwBase[j] * b; fwCol[j + 1] = fwBase[j + 1] * b; fwCol[j + 2] = fwBase[j + 2] * b;
+  }
+  fwGeo.attributes.position.needsUpdate = fwGeo.attributes.color.needsUpdate = true;
+}
+
 // ---------- 後製光暈 ----------
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
@@ -374,8 +455,19 @@ function sunPosition(ms) {
 
 // ---------- 介面 ----------
 const $ = id => document.getElementById(id);
-let mode = 'live', simMs = Date.now();
-const setMode = m => { mode = m; $('mLive').classList.toggle('on', m === 'live'); $('mFast').classList.toggle('on', m === 'fast'); };
+let mode = 'live', simMs = Date.now(), nyOffset = 0;
+const setMode = m => {
+  mode = m;
+  $('mLive').classList.toggle('on', m === 'live');
+  $('mFast').classList.toggle('on', m === 'fast');
+  $('mNY').classList.toggle('on', m === 'newyear');
+};
+// 跳到下一個跨年前 15 秒，以正常速度倒數
+$('mNY').onclick = () => {
+  const t = taipei(Date.now());
+  nyOffset = Date.UTC(t.y + 1, 0, 1) - TPE - 15e3 - Date.now();
+  setMode('newyear');
+};
 $('mLive').onclick = () => setMode('live');
 $('mFast').onclick = () => setMode(mode === 'fast' ? 'live' : 'fast');
 $('mSpin').onclick = () => { controls.autoRotate = !controls.autoRotate; $('mSpin').classList.toggle('on', controls.autoRotate); };
@@ -393,12 +485,13 @@ const SUN_LOW = C(0xffa060), SUN_HIGH = C(0xfff4e0);
 const sky = new THREE.Color(), weekColor = new THREE.Color(), wash = new THREE.Color();
 const ss = THREE.MathUtils.smoothstep;
 const clock = new THREE.Clock();
-let lastHud = 0;
+let lastHud = 0, fwAcc = 0;
 
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.1), now = clock.elapsedTime;
   if (mode === 'live') simMs = Date.now();
   else if (mode === 'fast') simMs += dt * 1800e3;   // 1 秒 = 30 分鐘
+  else if (mode === 'newyear') simMs = Date.now() + nyOffset;
 
   const { alt, dir } = sunPosition(simMs);
   const e = THREE.MathUtils.radToDeg(alt);
@@ -431,10 +524,30 @@ function frame() {
   beacon.material.color.setRGB(Math.sin(now * 3) > 0.2 ? 4 : 0.3, 0.05, 0.05);
   tower.rotation.z = Math.sin(now * 0.7) * 0.0015;      // 微風擺動
 
+  // 跨年：倒數 10 秒，1 月 1 日 00:00 起施放 6 分鐘煙火
+  const nyThis = Date.UTC(t.y, 0, 1) - TPE, nyNext = Date.UTC(t.y + 1, 0, 1) - TPE;
+  const sinceNY = (simMs - nyThis) / 1000, toNY = (nyNext - simMs) / 1000;
+  if (sinceNY < 360) {
+    fwAcc += dt * 6;
+    while (fwAcc >= 1) {
+      fwAcc--;
+      if (Math.random() < 0.5) sideBurst(Math.floor(sinceNY * 3) % 8);   // 由下往上逐節噴發
+      else shell();
+    }
+  }
+  if (fwAlive || sinceNY < 360) updateFireworks(dt);
+  const cd = $('countdown');
+  const cdText = toNY <= 10 ? String(Math.ceil(toNY)) : sinceNY < 12 ? `${t.y} 新年快樂` : '';
+  if (cd.textContent !== cdText) {
+    cd.textContent = cdText;
+    cd.hidden = !cdText;
+    cd.classList.toggle('greet', toNY > 10);
+  }
+
   if (now - lastHud > 0.2) {
     lastHud = now;
     $('clock').textContent = `${pad(t.h)}:${pad(t.mi)}:${pad(t.s)}`;
-    $('date').textContent = `台北時間 ${t.y}/${pad(t.mo + 1)}/${pad(t.d)}（${WEEK_NAMES[t.wd]}）${mode === 'live' ? '' : mode === 'fast' ? '· 快轉中' : '· 手動'}`;
+    $('date').textContent = `台北時間 ${t.y}/${pad(t.mo + 1)}/${pad(t.d)}（${WEEK_NAMES[t.wd]}）${mode === 'live' ? '' : mode === 'fast' ? '· 快轉中' : mode === 'newyear' ? '· 跨年模擬' : '· 手動'}`;
     $('phase').textContent = e > 6 ? '白天' : e > -0.8 ? (t.h < 12 ? '日出' : '黃昏') : e > -6 ? '暮光' : '夜晚';
     $('sun').textContent = `${e.toFixed(1)}°`;
     $('color').innerHTML = `<span class="swatch" style="background:#${weekColor.getHexString()};color:#${weekColor.getHexString()}"></span>星期${WEEK_NAMES[t.wd]} · ${w.name}色`;
