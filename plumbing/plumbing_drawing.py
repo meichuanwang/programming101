@@ -20,6 +20,7 @@
 import math
 
 import ezdxf
+import ezdxf.zoom
 from ezdxf.addons.drawing import matplotlib as dxf_mpl
 
 # ---------------------------------------------------------------------------
@@ -203,6 +204,9 @@ def main():
     draw_pipes(msp)
     draw_labels(msp)
 
+    # 寫入圖面範圍並把視窗縮放到全圖，CAD 一打開就看得到整張圖
+    doc.header["$INSUNITS"] = 4          # 單位：公釐 (mm)
+    ezdxf.zoom.extents(msp)
     doc.saveas("plumbing_plan.dxf")
     dxf_mpl.qsave(msp, "plumbing_plan.png", bg="#212830", dpi=200, size_inches=(16, 10))
     print("已輸出 plumbing_plan.dxf 與 plumbing_plan.png")
