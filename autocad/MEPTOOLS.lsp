@@ -306,6 +306,50 @@
                    (cons 10 (polar pt v (/ w 2.0)))
                    (cons 11 (polar pt v (/ w -2.0)))))))
 
+;; 保溫包住接頭：在接頭外畫一圈保溫框，並把穿過框的保溫線斷開
+;;   沒有保溫的系統不做任何事
+(defun DP:wrap (pt ang wh od sysdat / ins lay w h v c p1 p2 ss i e q1 q2 done c1 c2 c3 c4)
+  (if (setq ins (cdr (assoc (car sysdat) *DP-INS*)))
+    (progn
+      (setq lay (vl-string-subst "-保溫" "-管" (cadr sysdat))
+            w   (+ (car wh) (* 2.0 ins))
+            h   (+ (cadr wh) (* 2.0 ins))
+            v   (+ ang (/ pi 2.0)))
+      (DP:layer lay (caddr sysdat) T)
+      ;; 斷開兩側的保溫線
+      (foreach side (list 1.0 -1.0)
+        (setq c  (DP:p3 (polar pt v (* side (+ (/ od 2.0) ins))))
+              p1 (polar c ang (/ h -2.0))
+              p2 (polar c ang (/ h 2.0))
+              done nil)
+        (if (setq ss (ssget "_X" (list '(0 . "LWPOLYLINE,LINE,ARC") (cons 8 lay))))
+          (progn
+            (setq i (sslength ss))
+            (while (and (> i 0) (not done))
+              (setq e (ssname ss (setq i (1- i))))
+              (if (and (not (vlax-curve-isClosed e))
+                       (< (distance c (vlax-curve-getClosestPointTo e c)) 0.01))
+                (progn
+                  (setq q1 (vlax-curve-getClosestPointTo e p1)
+                        q2 (vlax-curve-getClosestPointTo e p2))
+                  (if (> (distance q1 q2) 0.01)
+                    (progn (command "_.BREAK" e "_F" "_non" q1 "_non" q2)
+                           (setq done T)))))))))
+      ;; 保溫框
+      (setq c1 (polar (polar pt ang (/ h  2.0)) v (/ w  2.0))
+            c2 (polar (polar pt ang (/ h  2.0)) v (/ w -2.0))
+            c3 (polar (polar pt ang (/ h -2.0)) v (/ w -2.0))
+            c4 (polar (polar pt ang (/ h -2.0)) v (/ w  2.0)))
+      (entmake (list '(0 . "LWPOLYLINE") '(100 . "AcDbEntity") (cons 8 lay)
+                     '(100 . "AcDbPolyline") '(90 . 4) '(70 . 1)
+                     (list 10 (car c1) (cadr c1)) (list 10 (car c2) (cadr c2))
+                     (list 10 (car c3) (cadr c3)) (list 10 (car c4) (cadr c4)))))))
+
+;; 畫接頭 + 保溫包覆
+(defun DP:collarw (sysdat od pt ang wh jt lay)
+  (DP:collar pt ang wh jt lay)
+  (DP:wrap pt ang wh od sysdat))
+
 ;; 找出 pt 落在哪一條 DP 中心線的「中間」（= 三通）
 (defun DP:findmain (pt self / ss i e cp found)
   (setq pt (list (car pt) (cadr pt) 0.0))
@@ -344,8 +388,8 @@
               (if (not (DP:otherbranch pt self main))
                 (progn
                   (DP:layer lay (caddr msd) T)
-                  (DP:collar (polar pt ang (car ds)) ang wh mjt lay)
-                  (DP:collar (polar pt (+ ang pi) (cadr ds)) ang wh mjt lay)))
+                  (DP:collarw msd (cadr mx) (polar pt ang (car ds)) ang wh mjt lay)
+                  (DP:collarw msd (cadr mx) (polar pt (+ ang pi) (cadr ds)) ang wh mjt lay)))
               (caddr ds))))))))
 
 ;; 沿中心線放接頭
@@ -376,15 +420,15 @@
                            f1 T)))
             (if (> len (+ s0 s1 (cadr wh)))
               (progn
-                (if f0 (DP:collar (polar p0 ang s0) ang wh jt lay))
-                (if f1 (DP:collar (polar p0 ang (- len s1)) ang wh jt lay))
+                (if f0 (DP:collarw sysdat od (polar p0 ang s0) ang wh jt lay))
+                (if f1 (DP:collarw sysdat od (polar p0 ang (- len s1)) ang wh jt lay))
                 (if (> step 0)
                   (progn
                     (setq d (+ s0 step))
                     (while (< d (- len s1 (cadr wh)))
-                      (DP:collar (polar p0 ang d) ang wh jt lay)
+                      (DP:collarw sysdat od (polar p0 ang d) ang wh jt lay)
                       (setq d (+ d step))))))
-              (if (and f0 f1) (DP:collar (polar p0 ang (/ len 2.0)) ang wh jt lay)))))
+              (if (and f0 f1) (DP:collarw sysdat od (polar p0 ang (/ len 2.0)) ang wh jt lay)))))
         (setq i (1+ i))))
     (if (= jt "GROOVE") (princ (strcat "\n" (DP:sizestr size) " 型錄沒有機接尺寸（壓接或牙接），不加接頭。")))))
 
@@ -639,7 +683,7 @@
             (setq pt (vlax-curve-getClosestPointTo ent (trans (cadr sel) 1 0))
                   d1 (vlax-curve-getFirstDeriv ent (vlax-curve-getParamAtPoint ent pt)))
             (DP:layer (DP:jlayer sysdat) (caddr sysdat) T)
-            (DP:collar pt (angle '(0 0 0) d1) wh jt (DP:jlayer sysdat)))))))
+            (DP:collarw sysdat (cadr mx) pt (angle '(0 0 0) d1) wh jt (DP:jlayer sysdat)))))))
   (princ))
 
 ;; ================= DPJS 接頭設定 =================
