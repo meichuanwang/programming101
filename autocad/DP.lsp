@@ -1,6 +1,6 @@
 ;;=========================================================
 ;; DP   ：畫複線管
-;;        排水：ACENT 鑄鐵管 + 不鏽鋼壓環（查表）
+;;        排水：ACENT 鑄鐵管 + 不鏽鋼壓環（彎頭、斜梯、順水梯查表）
 ;;        消防：金日 K01 機械接頭（查表）
 ;;        支管從主管中心線開始畫 → 自動判斷三通
 ;; DPR  ：彎頭半徑（給水等用；排水、消防一律直角 + 型錄 D/CE）
@@ -38,6 +38,44 @@
     (250 241 151 nil 102)
     (300 330 167 nil 152)
     (375 nil 183 nil 152)))
+
+;; ================= ACENT 斜梯（45° Y 型三通）=================
+;; ((主管 支管) D F G)
+;;   D = 交點到支管端  F = 主管全長  G = 交點到主管下游端
+(setq *DP-WYE*
+  '(((40 40) 102 152 51)   ((50 50) 117 168 51)
+    ((80 50) 135 168 38)   ((80 80) 146 203 57)
+    ((100 50) 152 168 25)  ((100 80) 165 203 43)  ((100 100) 179 241 62)
+    ((125 50) 191 205 24)  ((125 80) 203 246 43)  ((125 100) 216 284 62)
+    ((125 125) 241 321 79)
+    ((150 50) 210 211 13)  ((150 80) 222 248 32)  ((150 100) 235 284 49)
+    ((150 125) 260 318 65) ((150 150) 273 357 84)
+    ((200 50) 238 216 14)  ((200 80) 249 252 3)   ((200 100) 264 291 24)
+    ((200 125) 289 325 41) ((200 150) 300 360 59) ((200 200) 340 435 95)
+    ((250 100) 297 321 19) ((250 125) 359 356 45) ((250 150) 333 392 56)
+    ((250 200) 373 467 92) ((250 250) 419 546 129)
+    ((300 150) 381 407 44) ((300 200) 408 479 80) ((300 250) 449 560 121)
+    ((300 300) 502 648 146)
+    ((375 375) 591 762 171)))
+
+;; ================= ACENT 順水梯（90° TY 三通）=================
+;; ((主管 支管) E D F)
+;;   E = 主管中心到支管端  D = 支管中心到主管下游端  F = 主管全長
+(setq *DP-TY*
+  '(((40 40) 108 108 165)
+    ((50 40) 114 108 168)  ((50 50) 114 114 175)
+    ((80 40) 127 108 165)  ((80 50) 127 114 175)  ((80 80) 127 127 203)
+    ((100 50) 140 114 175) ((100 80) 140 127 203) ((100 100) 140 140 232)
+    ((125 50) 165 127 216) ((125 80) 152 140 237) ((125 100) 152 152 264)
+    ((125 125) 165 165 291)
+    ((150 50) 165 127 208) ((150 80) 165 140 233) ((150 100) 165 152 256)
+    ((150 125) 178 165 292) ((150 150) 178 178 318)
+    ((200 80) 190 152 264) ((200 100) 190 165 292) ((200 125) 203 178 318)
+    ((200 150) 203 191 343) ((200 200) 216 216 395)
+    ((250 100) 216 178 329) ((250 150) 264 236 423) ((250 200) 257 257 462)
+    ((250 250) 257 257 462)
+    ((300 100) 241 191 336) ((300 150) 254 229 394) ((300 200) 280 241 434)
+    ((300 250) 280 267 488) ((300 300) 292 292 546)))
 
 ;; ================= 金日 K01 / K10 / K20 / K30 =================
 ;; (管徑A  X  Y  Z  90°彎頭CE  45°彎頭CE  正三通CE)
@@ -136,15 +174,56 @@
          (if (< defl (* pi 0.375)) (nth 5 r) (nth 4 r)))
         (T od)))
 
-;; 三通：(主管側CE 支管側CE)
-(defun DP:teece (jt mod msize bsize / r)
-  (cond ((= jt "RING")
-         (list (* (nth 2 *DP-RING*) mod) (* (nth 2 *DP-RING*) mod)))
-        ((and (setq r (DP:ks msize)) (DP:ks bsize))
-         (list (nth 6 r)
-               (if (= msize bsize)
-                 (nth 6 r)
-                 (cond ((cdr (assoc (list msize bsize) *DP-KS-RT*))) (T (nth 6 r))))))))
+(defun DP:unit (v / l)
+  (setq l (distance '(0 0 0) v))
+  (mapcar '(lambda (x) (/ x l)) v))
+(defun DP:dot (a b) (apply '+ (mapcar '* a b)))
+
+;; 三通距離一律回傳 (主管+方向距離 主管-方向距離 支管距離)
+;; + 方向 = 主管畫線的方向
+
+;; 消防：金日 K30 / K31
+(defun DP:grvtee (msize bsize / r ce bce)
+  (if (and (setq r (DP:ks msize)) (DP:ks bsize))
+    (progn
+      (setq ce  (nth 6 r)
+            bce (if (= msize bsize)
+                  ce
+                  (cond ((cdr (assoc (list msize bsize) *DP-KS-RT*))) (T ce))))
+      (list ce ce bce))))
+
+;; 排水：ACENT 斜梯 / 順水梯
+;;   tv = 主管方向（單位向量），bv = 支管從交點往外的方向（單位向量）
+;;   夾角 < 60° → 斜梯（支管偏向哪邊，哪邊就是上游）
+;;   其他      → 順水梯（主管畫線方向 = 水流方向）
+(defun DP:ringtee (tv bv msize bsize mod / c r res k)
+  (setq c (DP:dot tv bv))
+  (setq res
+    (if (> (abs c) 0.5)
+      (if (setq r (cdr (assoc (list msize bsize) *DP-WYE*)))      ; (D F G)
+        (if (> c 0)
+          (list (- (nth 1 r) (nth 2 r)) (nth 2 r) (nth 0 r))
+          (list (nth 2 r) (- (nth 1 r) (nth 2 r)) (nth 0 r))))
+      (if (setq r (cdr (assoc (list msize bsize) *DP-TY*)))       ; (E D F)
+        (list (nth 1 r) (- (nth 2 r) (nth 1 r)) (nth 0 r)))))
+  (if res
+    res
+    (progn
+      (setq k (* (nth 2 *DP-RING*) mod))
+      (princ "\n型錄沒有這個三通尺寸，用估計值。")
+      (list k k k))))
+
+;; 同一點是否已經有別的支管（雙斜梯、雙順水梯）
+(defun DP:otherbranch (pt self main / ss i e found)
+  (setq pt (list (car pt) (cadr pt) 0.0))
+  (if (setq ss (ssget "_X" (list '(0 . "LWPOLYLINE") (cons 8 *DP-CL*) '(-3 ("DPPIPE")))))
+    (repeat (setq i (sslength ss))
+      (setq e (ssname ss (setq i (1- i))))
+      (if (and (not found) (not (equal e self)) (not (equal e main))
+               (or (< (distance pt (vlax-curve-getStartPoint e)) 1.0)
+                   (< (distance pt (vlax-curve-getEndPoint e)) 1.0)))
+        (setq found T))))
+  found)
 
 (defun DP:defl (a1 a2 / d)
   (setq d (abs (- a2 a1)))
@@ -189,25 +268,32 @@
             (setq found e))))))
   found)
 
-;; 三通處理：在主管兩側加接頭，回傳支管側 CE（不是三通則回傳 nil）
-(defun DP:tee (pt self bsize / main mx msd mjt ce wh ang lay)
+;; 三通處理：在主管兩側加接頭，回傳支管側距離（不是三通則回傳 nil）
+;;   bdir = 支管從交點往外的方向
+(defun DP:tee (pt self bsize bdir / main mx msd mjt wh tv ang lay ds)
   (if (setq main (DP:findmain pt self))
     (progn
       (setq mx  (DP:xd main)
             msd (assoc (car mx) *DP-SYS*)
             mjt (nth 5 msd))
-      (if (and mjt
-               (setq ce (DP:teece mjt (cadr mx) (caddr mx) bsize))
-               (setq wh (DP:jsize mjt (cadr mx) (caddr mx))))
+      (if (and mjt (setq wh (DP:jsize mjt (cadr mx) (caddr mx))))
         (progn
           (setq pt  (vlax-curve-getClosestPointTo main (list (car pt) (cadr pt) 0.0))
-                ang (angle '(0 0 0)
-                      (vlax-curve-getFirstDeriv main (vlax-curve-getParamAtPoint main pt)))
-                lay (DP:jlayer msd))
-          (DP:layer lay (caddr msd) T)
-          (DP:collar (polar pt ang (car ce)) ang wh mjt lay)
-          (DP:collar (polar pt (+ ang pi) (car ce)) ang wh mjt lay)
-          (cadr ce))))))
+                tv  (DP:unit (vlax-curve-getFirstDeriv main (vlax-curve-getParamAtPoint main pt)))
+                ang (angle '(0 0 0) tv)
+                lay (DP:jlayer msd)
+                ds  (if (= mjt "RING")
+                      (DP:ringtee tv (DP:unit bdir) (caddr mx) bsize (cadr mx))
+                      (DP:grvtee (caddr mx) bsize)))
+          (if ds
+            (progn
+              ;; 雙斜梯 / 雙順水梯：主管接頭第一支支管已經加過
+              (if (not (DP:otherbranch pt self main))
+                (progn
+                  (DP:layer lay (caddr msd) T)
+                  (DP:collar (polar pt ang (car ds)) ang wh mjt lay)
+                  (DP:collar (polar pt (+ ang pi) (cadr ds)) ang wh mjt lay)))
+              (caddr ds))))))))
 
 ;; 沿中心線放接頭
 (defun DP:joints (ent od size sysdat stee etee / jt wh lay step endon vs n i
@@ -292,7 +378,9 @@
   (setvar "PLINEWID" 0)
   (setq lastent (entlast))
   (princ (strcat "\n畫 " (nth 3 sysdat) " " (itoa size) "A 路徑（外徑 " (rtos od 2 2)
-                 "），支管請從主管中心線開始畫，Enter 結束："))
+                 "），支管請從主管中心線開始畫"
+                 (if (= (nth 5 sysdat) "RING") "，排水主管請順水流方向畫" "")
+                 "，Enter 結束："))
   (setvar "CMDECHO" 1)
   (command "_.PLINE")
   (while (> (getvar "CMDACTIVE") 0) (command pause))
@@ -323,8 +411,10 @@
       ;; 三通判斷 + 接頭
       (if (nth 5 sysdat)
         (progn
-          (setq stee (DP:tee (vlax-curve-getStartPoint ent) ent size)
-                etee (DP:tee (vlax-curve-getEndPoint ent) ent size))
+          (setq stee (DP:tee (vlax-curve-getStartPoint ent) ent size
+                             (vlax-curve-getFirstDeriv ent (vlax-curve-getStartParam ent)))
+                etee (DP:tee (vlax-curve-getEndPoint ent) ent size
+                             (mapcar '- (vlax-curve-getFirstDeriv ent (vlax-curve-getEndParam ent)))))
           (if (or stee etee) (princ "\n偵測到三通，已在主管加接頭。"))
           (DP:joints ent od size sysdat stee etee)))
       (princ (strcat "\n完成：" (nth 3 sysdat) " " (itoa size) "A")))
