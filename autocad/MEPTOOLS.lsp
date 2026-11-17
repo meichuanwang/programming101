@@ -33,6 +33,15 @@
   '((15 . 21.7) (20 . 27.2) (25 . 34.0) (32 . 42.7) (40 . 48.6) (50 . 60.5)
     (65 . 76.3) (80 . 89.1) (100 . 114.3) (125 . 139.8) (150 . 165.2)
     (200 . 216.3) (250 . 267.4) (300 . 318.5)))
+;; 銅管（冷媒）：輸入代號 → 外徑
+;;   6=1/4"  10=3/8"  13=1/2"  16=5/8"  19=3/4"  22=7/8"  28=1-1/8"  35=1-3/8"  41=1-5/8"
+(setq *DP-OD-CU*
+  '((6 . 6.35) (10 . 9.52) (13 . 12.7) (16 . 15.88) (19 . 19.05)
+    (22 . 22.22) (28 . 28.58) (35 . 34.92) (41 . 41.28)))
+(setq *DP-INCH-CU*
+  '((6 . "1/4\"") (10 . "3/8\"") (13 . "1/2\"") (16 . "5/8\"") (19 . "3/4\"")
+    (22 . "7/8\"") (28 . "1-1/8\"") (35 . "1-3/8\"") (41 . "1-5/8\"")))
+
 ;; 不鏽鋼管（冷熱水）
 ;;   1" 以下：壓接管 JIS G3448（13Su / 20Su / 25Su）
 ;;   1" 以上：機接用不鏽鋼管，外徑同鋼管
@@ -130,7 +139,7 @@
     ("Y" "P-雨水-管" 150 "雨水" "CI" "RING")   ; 雨水若用 PVC，改成 "PVC" nil
     ("V" "P-通氣-管" 3  "通氣" "CI"  "RING")
     ("F" "P-消防-管" 1  "消防" "STL" "GROOVE")
-    ("R" "P-冷媒-管" 4  "冷媒" "PVC" nil)))
+    ("R" "P-冷媒-管" 4  "冷媒" "CU"  nil)))
 
 ;; ================= 接頭設定 =================
 ;; 排水壓環：(每側外凸mm  管長mm  型錄沒有時的轉角/三通距離=外徑×  管端加)
@@ -146,8 +155,7 @@
 (if (not *DP-SCALE*) (setq *DP-SCALE* 50.0))  ; 出圖比例 1/50
 (if (not *DP-TXH*)   (setq *DP-TXH* 2.5))     ; 出圖後字高 mm
 (if (not *DP-SLOPE*) (setq *DP-SLOPE* 100))   ; 排水坡度預設 1/100
-(setq *DP-PFX-D* "BOP")  ; 冷媒以外所有系統的高程前綴（管底）
-(setq *DP-PFX*   "CL")   ; 冷媒高程前綴（管中心）
+(setq *DP-PFX-D* "BOP")  ; 所有系統的高程前綴（管底）
 
 ;; ================= 共用函式 =================
 (defun DP:layer (name color plot / doc lays lay lin)
@@ -172,6 +180,7 @@
   (cdr (assoc size (cond ((= (nth 4 sysdat) "STL") *DP-OD-STL*)
                          ((= (nth 4 sysdat) "CI")  *DP-OD-CI*)
                          ((= (nth 4 sysdat) "SUS") *DP-OD-SUS*)
+                         ((= (nth 4 sysdat) "CU")  *DP-OD-CU*)
                          (T *DP-OD-PVC*)))))
 (defun DP:jlayer (sysdat) (vl-string-subst "-接頭" "-管" (cadr sysdat)))
 (defun DP:ks (size) (assoc size *DP-KS*))
@@ -389,7 +398,12 @@
 
 ;; 有坡度的系統（排水、汙水、雨水）
 (defun DP:sloped (sys) (member sys '("D" "S" "Y")))
-(defun DP:pfx (sys) (if (or (DP:sloped sys) (member sys (quote ("V" "W" "H" "F")))) *DP-PFX-D* *DP-PFX*))
+(defun DP:pfx (sys) *DP-PFX-D*)
+;; 標註用管徑：冷媒用銅管英吋表
+(defun DP:sizestr2 (size sys)
+  (if (= sys "R")
+    (cond ((cdr (assoc size *DP-INCH-CU*))) (T (DP:sizestr size)))
+    (DP:sizestr size)))
 
 (defun DP:elstr (v) (strcat (if (minusp v) "-" "+") (rtos (abs v) 2 0)))
 
@@ -447,7 +461,7 @@
       (setq ang  (angle (car best) (cadr best))
             rr   (DP:readable ang) rot (car rr) flip (cadr rr)
             mid  (polar (car best) ang (/ blen 2.0))
-            txt  (strcat (DP:sizestr (nth 2 mx)) (nth 3 sysdat) "管 "
+            txt  (strcat (DP:sizestr2 (nth 2 mx) (car mx)) (nth 3 sysdat) "管 "
                          (DP:pfx (car mx)) (DP:elstr el)))
       ;; 管線上方：2"汙水管 BOP+2400
       (DP:text (polar mid (+ rot (/ pi 2.0)) (+ (/ od 2.0) (* h 0.5))) rot txt h lay 1)
@@ -490,6 +504,8 @@
   (if (not *DP-last-size*) (setq *DP-last-size* 100))
   (if (= (nth 4 sysdat) "CI")
     (princ "\n鑄鐵管徑：40(1½\") 50(2\") 80(3\") 100(4\") 125(5\") 150(6\") 200(8\") 250 300 375"))
+  (if (= (nth 4 sysdat) "CU")
+    (princ "\n銅管代號：6(1/4\") 10(3/8\") 13(1/2\") 16(5/8\") 19(3/4\") 22(7/8\") 28(1-1/8\") 35(1-3/8\") 41(1-5/8\")"))
   (initget 6)
   (setq size (getint (strcat "\n管徑 A <" (itoa *DP-last-size*) ">: ")))
   (if (not size) (setq size *DP-last-size*))
