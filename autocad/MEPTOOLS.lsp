@@ -114,14 +114,14 @@
 
 ;; ================= 系統 =================
 ;; 代號 圖層 顏色 名稱 材料(PVC/STL/CI) 接頭(nil/RING/GROOVE)
-;; 通氣若也用鑄鐵管，把 V 那行改成 "CI" "RING"
+;; 排水、汙水、雨水、通氣都是 CIP 鑄鐵管
 (setq *DP-SYS*
   '(("W" "P-給水-管" 5  "給水" "PVC" nil)
     ("H" "P-熱水-管" 6  "熱水" "PVC" nil)
     ("D" "P-排水-管" 34 "排水" "CI"  "RING")
     ("S" "P-汙水-管" 32 "汙水" "CI"  "RING")
     ("Y" "P-雨水-管" 150 "雨水" "CI" "RING")   ; 雨水若用 PVC，改成 "PVC" nil
-    ("V" "P-通氣-管" 3  "通氣" "PVC" nil)
+    ("V" "P-通氣-管" 3  "通氣" "CI"  "RING")
     ("F" "P-消防-管" 1  "消防" "STL" "GROOVE")
     ("R" "P-冷媒-管" 4  "冷媒" "PVC" nil)))
 
@@ -381,7 +381,7 @@
 
 ;; 有坡度的系統（排水、汙水、雨水）
 (defun DP:sloped (sys) (member sys '("D" "S" "Y")))
-(defun DP:pfx (sys) (if (DP:sloped sys) *DP-PFX-D* *DP-PFX*))
+(defun DP:pfx (sys) (if (or (DP:sloped sys) (= sys "V")) *DP-PFX-D* *DP-PFX*))
 
 (defun DP:elstr (v) (strcat (if (minusp v) "-" "+") (rtos (abs v) 2 0)))
 
