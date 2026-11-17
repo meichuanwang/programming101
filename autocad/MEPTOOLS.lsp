@@ -33,6 +33,13 @@
   '((15 . 21.7) (20 . 27.2) (25 . 34.0) (32 . 42.7) (40 . 48.6) (50 . 60.5)
     (65 . 76.3) (80 . 89.1) (100 . 114.3) (125 . 139.8) (150 . 165.2)
     (200 . 216.3) (250 . 267.4) (300 . 318.5)))
+;; 不鏽鋼管（冷熱水）
+;;   1" 以下：壓接管 JIS G3448（13Su / 20Su / 25Su）
+;;   1" 以上：機接用不鏽鋼管，外徑同鋼管
+(setq *DP-OD-SUS*
+  '((13 . 15.88) (20 . 22.22) (25 . 28.58)
+    (32 . 42.7) (40 . 48.6) (50 . 60.5) (65 . 76.3) (80 . 89.1)
+    (100 . 114.3) (125 . 139.8) (150 . 165.2)))
 ;; ACENT 鑄鐵管（排水）  1½"=40 2"=50 3"=80 4"=100 5"=125 6"=150 8"=200 10"=250 12"=300 15"=375
 (setq *DP-OD-CI*
   '((40 . 48.26) (50 . 59.69) (80 . 85.09) (100 . 111.25) (125 . 134.62)
@@ -116,8 +123,8 @@
 ;; 代號 圖層 顏色 名稱 材料(PVC/STL/CI) 接頭(nil/RING/GROOVE)
 ;; 排水、汙水、雨水、通氣都是 CIP 鑄鐵管
 (setq *DP-SYS*
-  '(("W" "P-給水-管" 5  "給水" "PVC" nil)
-    ("H" "P-熱水-管" 6  "熱水" "PVC" nil)
+  '(("W" "P-給水-管" 5  "給水" "SUS" "GROOVE")   ; 1" 以下壓接（不畫接頭），以上機接
+    ("H" "P-熱水-管" 6  "熱水" "SUS" "GROOVE")
     ("D" "P-排水-管" 34 "排水" "CI"  "RING")
     ("S" "P-汙水-管" 32 "汙水" "CI"  "RING")
     ("Y" "P-雨水-管" 150 "雨水" "CI" "RING")   ; 雨水若用 PVC，改成 "PVC" nil
@@ -164,6 +171,7 @@
 (defun DP:od (sysdat size)
   (cdr (assoc size (cond ((= (nth 4 sysdat) "STL") *DP-OD-STL*)
                          ((= (nth 4 sysdat) "CI")  *DP-OD-CI*)
+                         ((= (nth 4 sysdat) "SUS") *DP-OD-SUS*)
                          (T *DP-OD-PVC*)))))
 (defun DP:jlayer (sysdat) (vl-string-subst "-接頭" "-管" (cadr sysdat)))
 (defun DP:ks (size) (assoc size *DP-KS*))
@@ -365,7 +373,7 @@
                       (setq d (+ d step))))))
               (if (and f0 f1) (DP:collar (polar p0 ang (/ len 2.0)) ang wh jt lay)))))
         (setq i (1+ i))))
-    (if (= jt "GROOVE") (princ "\n50A 以下視為牙接，不加機接。"))))
+    (if (= jt "GROOVE") (princ (strcat "\n" (DP:sizestr size) " 型錄沒有機接尺寸（壓接或牙接），不加接頭。")))))
 
 ;; ================= DP 主程式 =================
 ;; ================= 標註 =================
@@ -596,7 +604,7 @@
               jt     (nth 5 sysdat)
               wh     (if jt (DP:jsize jt (cadr mx) (caddr mx))))
         (if (not wh)
-          (princ "\n這支管沒有接頭（無接頭系統或 50A 以下牙接）。")
+          (princ "\n這支管沒有接頭（無接頭系統，或型錄沒有這個管徑的機接）。")
           (progn
             (setq pt (vlax-curve-getClosestPointTo ent (trans (cadr sel) 1 0))
                   d1 (vlax-curve-getFirstDeriv ent (vlax-curve-getParamAtPoint ent pt)))
