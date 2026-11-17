@@ -441,7 +441,7 @@
                        (vlax-curve-getFirstDeriv ent (vlax-curve-getParamAtPoint ent pt)))
                   rr (DP:readable a))
             (DP:text (polar pt (- (car rr) (/ pi 2.0)) (+ (/ od 2.0) h))
-                     (car rr) (strcat *DP-PFX-D* (DP:elstr (cadr pr))) h lay 2))))))))
+                     (car rr) (strcat *DP-PFX-D* (DP:elstr (cadr pr))) h lay 2)))))))
 
 (defun c:DP ( / *error* oldlay oldecho oldrad sys sysdat size od lastent ent obj d r stee etee el sl)
   (defun *error* (msg)
