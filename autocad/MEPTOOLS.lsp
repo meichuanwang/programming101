@@ -1,4 +1,16 @@
 ;;=========================================================
+;; MEPTOOLS.lsp  住宅機電複線圖工具
+;;
+;;  DP     畫複線管（排水 ACENT 壓環、消防金日 K01 機接）
+;;  DPR    彎頭半徑
+;;  DPJ    手動加接頭
+;;  DPJS   接頭設定
+;;  DPX    交叉自動斷線
+;;  DPXS   斷線設定
+;;  OUTSRC 另存外包用檔案（刪除中心線）
+;;=========================================================
+
+;;=========================================================
 ;; DP   ：畫複線管
 ;;        排水：ACENT 鑄鐵管 + 不鏽鋼壓環（彎頭、斜梯、順水梯查表）
 ;;        消防：金日 K01 機械接頭（查表）
@@ -481,6 +493,233 @@
   (princ "\n設定完成（關閉 AutoCAD 後回到預設，要永久修改請改程式上方數值）。")
   (princ))
 
-(princ "\n已載入：DP 畫管 / DPR 彎頭 / DPJ 加接頭 / DPJS 接頭設定")
-(princ "\n  排水：ACENT 鑄鐵管 + 壓環　消防：金日 K01 機接")
+;;#########################################################
+;; 第二部分：DPX 交叉斷線
+;;#########################################################
+;;=========================================================
+;; DPX  ：交叉自動斷線（上層管連續，下層管在交叉處斷開）
+;; DPXS ：設定處理方式（斷開 / 虛線）與斷線間隙
+;;=========================================================
+
+(if (not *DPX-mode*) (setq *DPX-mode* "B"))       ; B = 斷開，H = 虛線
+(if (not *DPX-gap*)  (setq *DPX-gap* 50.0))       ; 斷開時，離上層管邊線的間隙 (mm)
+
+;; 選集轉清單
+(defun DPX:ss->list (ss / i lst)
+  (if ss
+    (repeat (setq i (sslength ss))
+      (setq lst (cons (ssname ss (setq i (1- i))) lst))))
+  lst
+)
+
+;; 兩物件的交點
+(defun DPX:inters (e1 e2 / r v lst)
+  (setq r (vl-catch-all-apply 'vla-IntersectWith
+            (list (vlax-ename->vla-object e1)
+                  (vlax-ename->vla-object e2)
+                  acExtendNone)))
+  (if (and (not (vl-catch-all-error-p r))
+           (setq v (vlax-variant-value r))
+           (>= (vlax-safearray-get-u-bound v 1) 0))
+    (progn
+      (setq v (vlax-safearray->list v))
+      (while v
+        (setq lst (cons (list (car v) (cadr v) (caddr v)) lst)
+              v   (cdddr v)))))
+  lst
+)
+
+;; 找出同時包含 p1、p2 的線段（斷開後線會分成好幾段）
+(defun DPX:find (p1 p2 pieces / found)
+  (foreach e pieces
+    (if (and (not found) (entget e)
+             (< (distance p1 (vlax-curve-getClosestPointTo e p1)) 0.01)
+             (< (distance p2 (vlax-curve-getClosestPointTo e p2)) 0.01))
+      (setq found e)))
+  found
+)
+
+;; 載入線型
+(defun DPX:ltype (name / lin)
+  (if (not (tblsearch "LTYPE" name))
+    (progn
+      (setq lin (if (= 1 (getvar "MEASUREMENT")) "acadiso.lin" "acad.lin"))
+      (vl-catch-all-apply 'vla-Load
+        (list (vla-get-Linetypes (vla-get-ActiveDocument (vlax-get-acad-object)))
+              name lin))))
+  (tblsearch "LTYPE" name)
+)
+
+;; 處理一條下層管邊線
+(defun DPX:breakone (L upl gap mode / pts ds out len pairs a b lay pieces cnt p1 p2 tgt last)
+  ;; 1. 找出和上層管的所有交點，換算成沿線距離
+  (foreach U upl
+    (if (not (equal U L)) (setq pts (append pts (DPX:inters L U)))))
+  (setq ds (vl-sort
+             (mapcar '(lambda (p)
+                        (vlax-curve-getDistAtPoint L (vlax-curve-getClosestPointTo L p)))
+                     pts)
+             '<))
+  ;; 去掉重複交點
+  (foreach d ds
+    (if (or (not out) (> (- d (car out)) 1e-4)) (setq out (cons d out))))
+  (setq ds  (reverse out)
+        len (vlax-curve-getDistAtParam L (vlax-curve-getEndParam L)))
+
+  ;; 2. 兩兩配對（穿過上層管的兩條邊線），加上間隙，重疊的合併
+  (while (cadr ds)
+    (setq a (max 0.0 (- (car ds) gap))
+          b (min len (+ (cadr ds) gap)))
+    (if (and pairs (<= a (cadr (car pairs))))
+      (setq pairs (cons (list (car (car pairs)) b) (cdr pairs)))
+      (setq pairs (cons (list a b) pairs)))
+    (setq ds (cddr ds)))
+  ;; 整條都在上層管底下就不處理
+  (setq pairs (vl-remove-if '(lambda (pr) (and (<= (car pr) 1e-6)
+                                               (>= (cadr pr) (- len 1e-6))))
+                            pairs))
+  (setq pairs (mapcar '(lambda (pr)
+                         (list (vlax-curve-getPointAtDist L (car pr))
+                               (vlax-curve-getPointAtDist L (cadr pr))))
+                      pairs))
+
+  ;; 3. 斷開，虛線模式就補一條 HIDDEN 線
+  (setq lay (cdr (assoc 8 (entget L))) pieces (list L) cnt 0)
+  (foreach pr pairs
+    (setq p1 (car pr) p2 (cadr pr) tgt (DPX:find p1 p2 pieces))
+    (if tgt
+      (progn
+        (setq last (entlast))
+        (command "_.BREAK" tgt "_F" p1 p2)
+        (if (not (equal last (entlast))) (setq pieces (cons (entlast) pieces)))
+        (if (= mode "H")
+          (entmake (list '(0 . "LINE") (cons 8 lay) (cons 6 "HIDDEN")
+                         (cons 10 p1) (cons 11 p2))))
+        (setq cnt (1+ cnt)))))
+  cnt
+)
+
+(defun c:DPX ( / *error* oldos oldecho filt upl lowl gap total)
+  (defun *error* (msg)
+    (if oldos   (setvar "OSMODE" oldos))
+    (if oldecho (setvar "CMDECHO" oldecho))
+    (command-s "_.UNDO" "_End")
+    (if (not (wcmatch (strcase msg) "*CANCEL*,*QUIT*,*EXIT*"))
+      (princ (strcat "\n錯誤：" msg)))
+    (princ)
+  )
+  ;; 只選線、聚合線、弧；排除中心線和接頭圖層
+  (setq filt (list '(0 . "LINE,LWPOLYLINE,ARC")
+                   '(-4 . "<NOT") (cons 8 (strcat *DP-CL* ",*-接頭")) '(-4 . "NOT>")))
+
+  (princ (strcat "\n目前設定：" (if (= *DPX-mode* "H") "虛線" "斷開")
+                 (if (= *DPX-mode* "B") (strcat "，間隙 " (rtos *DPX-gap* 2 0)) "")
+                 "（用 DPXS 修改）"))
+  (princ "\n選【上層管】的兩條邊線（保持連續）：")
+  (if (not (setq upl (DPX:ss->list (ssget filt)))) (exit))
+  (princ "\n選【下層管】的邊線（會被斷開，可一次選多支）：")
+  (if (not (setq lowl (DPX:ss->list (ssget filt)))) (exit))
+  (setq lowl (vl-remove-if '(lambda (e) (member e upl)) lowl))
+
+  (setq oldos (getvar "OSMODE") oldecho (getvar "CMDECHO"))
+  (setvar "CMDECHO" 0)
+  (setvar "OSMODE" 0)
+  (command "_.UNDO" "_Begin")
+
+  (if (and (= *DPX-mode* "H") (not (DPX:ltype "HIDDEN")))
+    (princ "\n找不到 HIDDEN 線型，虛線會顯示成實線。"))
+  (setq gap   (if (= *DPX-mode* "H") 0.0 *DPX-gap*)
+        total 0)
+  (foreach L lowl
+    (setq total (+ total (DPX:breakone L upl gap *DPX-mode*))))
+
+  (command "_.UNDO" "_End")
+  (setvar "OSMODE" oldos)
+  (setvar "CMDECHO" oldecho)
+  (princ (strcat "\n完成：處理 " (itoa total) " 處斷線。"))
+  (princ)
+)
+
+;; 設定
+(defun c:DPXS ( / m g)
+  (initget "B H")
+  (setq m (getkword (strcat "\n交叉處理方式 [斷開(B)/虛線(H)] <" *DPX-mode* ">: ")))
+  (if m (setq *DPX-mode* m))
+  (if (= *DPX-mode* "B")
+    (progn
+      (initget 4)
+      (setq g (getdist (strcat "\n斷線間隙，離上層管邊線的距離 (mm) <"
+                               (rtos *DPX-gap* 2 0) ">: ")))
+      (if g (setq *DPX-gap* g))))
+  (princ "\n設定完成。")
+  (princ)
+)
+
+;;#########################################################
+;; 第三部分：OUTSRC 另存外包用檔案
+;;#########################################################
+;;=========================================================
+;; OUTSRC ：另存「-外包用」檔案，並刪除中心線圖層
+;;          目前開著的工作檔不受影響
+;;=========================================================
+
+(defun c:OUTSRC ( / lay src dst ver dbx lst cnt lyr)
+  (setq lay *DP-CL*)               ; 中心線圖層（在檔案上方 *DP-CL* 修改）
+
+  (if (= 0 (getvar "DWGTITLED"))
+    (progn (princ "\n請先存檔後再執行。") (exit))
+  )
+  ;; 避免目前圖層停在中心線圖層
+  (if (= (strcase (getvar "CLAYER")) (strcase lay))
+    (setvar "CLAYER" "0")
+  )
+  (command "_.QSAVE")
+
+  (setq src (strcat (getvar "DWGPREFIX") (getvar "DWGNAME"))
+        dst (strcat (getvar "DWGPREFIX") (vl-filename-base src) "-外包用.dwg"))
+
+  (if (findfile dst) (vl-file-delete dst))
+  (if (not (vl-file-copy src dst))
+    (progn (princ "\n複製檔案失敗，請確認資料夾權限。") (exit))
+  )
+
+  ;; 用 ObjectDBX 在背景開啟複製檔
+  (setq ver (substr (getvar "ACADVER") 1 2)
+        dbx (vla-GetInterfaceObject (vlax-get-acad-object)
+              (strcat "ObjectDBX.AxDbDocument." ver)))
+  (vla-Open dbx dst)
+
+  ;; 解鎖中心線圖層，避免刪不掉
+  (if (not (vl-catch-all-error-p
+             (setq lyr (vl-catch-all-apply 'vla-Item (list (vla-get-Layers dbx) lay)))))
+    (vla-put-Lock lyr :vlax-false)
+    (setq lyr nil)
+  )
+
+  ;; 收集所有空間、圖塊內在中心線圖層上的物件
+  (setq lst '() cnt 0)
+  (vlax-for blk (vla-get-Blocks dbx)
+    (vlax-for obj blk
+      (if (= (strcase (vla-get-Layer obj)) (strcase lay))
+        (setq lst (cons obj lst))
+      )
+    )
+  )
+  (foreach obj lst
+    (if (not (vl-catch-all-error-p (vl-catch-all-apply 'vla-Delete (list obj))))
+      (setq cnt (1+ cnt))
+    )
+  )
+  ;; 刪除圖層本身
+  (if lyr (vl-catch-all-apply 'vla-Delete (list lyr)))
+
+  (vla-SaveAs dbx dst)
+  (vlax-release-object dbx)
+
+  (princ (strcat "\n完成：已刪除 " (itoa cnt) " 個中心線物件。"
+                 "\n外包檔案：" dst))
+  (princ)
+)
+
+(princ "\n已載入 MEPTOOLS：DP / DPR / DPJ / DPJS / DPX / DPXS / OUTSRC")
 (princ)
