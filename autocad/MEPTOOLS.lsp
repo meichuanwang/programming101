@@ -119,6 +119,7 @@
   '(("W" "P-給水-管" 5  "給水" "PVC" nil)
     ("H" "P-熱水-管" 6  "熱水" "PVC" nil)
     ("D" "P-排水-管" 34 "排水" "CI"  "RING")
+    ("S" "P-汙水-管" 32 "汙水" "CI"  "RING")
     ("V" "P-通氣-管" 3  "通氣" "PVC" nil)
     ("F" "P-消防-管" 1  "消防" "STL" "GROOVE")
     ("R" "P-冷媒-管" 4  "冷媒" "PVC" nil)))
@@ -137,8 +138,8 @@
 (if (not *DP-SCALE*) (setq *DP-SCALE* 50.0))  ; 出圖比例 1/50
 (if (not *DP-TXH*)   (setq *DP-TXH* 2.5))     ; 出圖後字高 mm
 (if (not *DP-SLOPE*) (setq *DP-SLOPE* 100))   ; 排水坡度預設 1/100
-(setq *DP-PFX-D* "FL")   ; 排水高程前綴（管底）
-(setq *DP-PFX*   "CL")   ; 其他系統高程前綴（管中心）
+(setq *DP-PFX-D* "BOP")  ; 排水、汙水高程前綴（管底）
+(setq *DP-PFX*   "CL")   ; 其他系統高程前綴（管中心）；若也標管底改成 "BOP"
 
 ;; ================= 共用函式 =================
 (defun DP:layer (name color plot / doc lays lay lin)
@@ -368,6 +369,19 @@
 ;; ================= DP 主程式 =================
 ;; ================= 標註 =================
 (defun DP:p3 (p) (list (car p) (cadr p) 0.0))
+;; 管徑顯示成英吋：50 → 2"
+(setq *DP-INCH*
+  '((13 . "1/2\"") (15 . "1/2\"") (20 . "3/4\"") (25 . "1\"") (32 . "1-1/4\"")
+    (40 . "1-1/2\"") (50 . "2\"") (65 . "2-1/2\"") (80 . "3\"") (100 . "4\"")
+    (125 . "5\"") (150 . "6\"") (200 . "8\"") (250 . "10\"") (300 . "12\"")
+    (375 . "15\"")))
+(defun DP:sizestr (size)
+  (cond ((cdr (assoc size *DP-INCH*))) (T (strcat (itoa size) "A"))))
+
+;; 有坡度的系統（排水、汙水）
+(defun DP:sloped (sys) (member sys '("D" "S")))
+(defun DP:pfx (sys) (if (DP:sloped sys) *DP-PFX-D* *DP-PFX*))
+
 (defun DP:elstr (v) (strcat (if (minusp v) "-" "+") (rtos (abs v) 2 0)))
 
 ;; 讓文字不會倒著讀：回傳 (旋轉角 是否翻轉)
@@ -385,7 +399,7 @@
 
 ;; 問高程（每個系統記住上次的值）
 (defun DP:getel (sys / pfx def v)
-  (setq pfx (if (= sys "D") *DP-PFX-D* *DP-PFX*)
+  (setq pfx (DP:pfx sys)
         def (cdr (assoc sys *DP-EL*)))
   (if def
     (setq v (getreal (strcat "\n" pfx " 高程 mm（離地，排水為起點）<" (rtos def 2 0) ">: ")))
@@ -402,8 +416,8 @@
   *DP-SLOPE*)
 
 ;; 標註一支管
-;;   一般：「給水 25A CL+2700」標在最長直管段中間
-;;   排水：「排水 100A i=1/100 →」，起點、終點各標 FL（終點依坡度算）
+;;   標在最長直管段中間：2"汙水管 BOP+2400
+;;   排水類另外標：管下方「i=1/100 →」，終點高程（依坡度算）
 (defun DP:label (ent / mx sysdat od el sl lay h vs i v0 v1 len blen best
                        ang rr rot flip mid txt tl d pt a)
   (setq mx (DP:xd ent) sysdat (assoc (car mx) *DP-SYS*)
@@ -424,24 +438,23 @@
       (setq ang  (angle (car best) (cadr best))
             rr   (DP:readable ang) rot (car rr) flip (cadr rr)
             mid  (polar (car best) ang (/ blen 2.0))
-            txt  (strcat (nth 3 sysdat) " " (itoa (nth 2 mx)) "A"))
-      (setq txt (if sl
-                  (strcat txt " i=1/" (itoa sl) " " (if flip "←" "→"))
-                  (strcat txt " " *DP-PFX* (DP:elstr el))))
-      ;; 管線上方
+            txt  (strcat (DP:sizestr (nth 2 mx)) (nth 3 sysdat) "管 "
+                         (DP:pfx (car mx)) (DP:elstr el)))
+      ;; 管線上方：2"汙水管 BOP+2400
       (DP:text (polar mid (+ rot (/ pi 2.0)) (+ (/ od 2.0) (* h 0.5))) rot txt h lay 1)
-      ;; 排水：起點、終點 FL（管線下方）
+      ;; 排水類：管線下方標坡度和流向，終點標高程（依坡度算）
       (if sl
         (progn
+          (DP:text (polar mid (- rot (/ pi 2.0)) (+ (/ od 2.0) h)) rot
+                   (strcat "i=1/" (itoa sl) " " (if flip "←" "→")) h lay 2)
           (setq tl (vlax-curve-getDistAtParam ent (vlax-curve-getEndParam ent))
-                d  (min (* tl 0.15) (* h 6.0)))
-          (foreach pr (list (list d el) (list (- tl d) (- el (/ tl sl))))
-            (setq pt (vlax-curve-getPointAtDist ent (car pr))
-                  a  (angle '(0 0 0)
-                       (vlax-curve-getFirstDeriv ent (vlax-curve-getParamAtPoint ent pt)))
-                  rr (DP:readable a))
-            (DP:text (polar pt (- (car rr) (/ pi 2.0)) (+ (/ od 2.0) h))
-                     (car rr) (strcat *DP-PFX-D* (DP:elstr (cadr pr))) h lay 2)))))))
+                d  (min (* tl 0.15) (* h 6.0))
+                pt (vlax-curve-getPointAtDist ent (- tl d))
+                a  (angle '(0 0 0)
+                     (vlax-curve-getFirstDeriv ent (vlax-curve-getParamAtPoint ent pt)))
+                rr (DP:readable a))
+          (DP:text (polar pt (- (car rr) (/ pi 2.0)) (+ (/ od 2.0) h))
+                   (car rr) (strcat (DP:pfx (car mx)) (DP:elstr (- el (/ tl sl)))) h lay 2))))))
 
 (defun c:DP ( / *error* oldlay oldecho oldrad sys sysdat size od lastent ent obj d r stee etee el sl)
   (defun *error* (msg)
@@ -458,8 +471,8 @@
 
   ;; 系統
   (if (not *DP-last-sys*) (setq *DP-last-sys* "W"))
-  (initget "W H D V F R")
-  (setq sys (getkword (strcat "\n系統 [給水(W)/熱水(H)/排水(D)/通氣(V)/消防(F)/冷媒(R)] <"
+  (initget "W H D S V F R")
+  (setq sys (getkword (strcat "\n系統 [給水(W)/熱水(H)/排水(D)/汙水(S)/通氣(V)/消防(F)/冷媒(R)] <"
                               *DP-last-sys* ">: ")))
   (if (not sys) (setq sys *DP-last-sys*))
   (setq *DP-last-sys* sys sysdat (assoc sys *DP-SYS*))
@@ -480,7 +493,7 @@
   (if (= *DP-LBL* "Y")
     (progn
       (setq el (DP:getel sys))
-      (if (= sys "D") (setq sl (DP:getslope)))))
+      (if (DP:sloped sys) (setq sl (DP:getslope)))))
 
   ;; 圖層
   (DP:layer *DP-CL* 8 nil)
@@ -547,7 +560,7 @@
         (if (not el)
           (progn
             (setq el (DP:getel (car mx)))
-            (if (= (car mx) "D") (setq sl (DP:getslope)))
+            (if (DP:sloped (car mx)) (setq sl (DP:getslope)))
             (DP:setxd ent (nth 0 mx) (nth 1 mx) (nth 2 mx) el sl)))
         (DP:label ent)
         (princ "\n已標註。"))))
