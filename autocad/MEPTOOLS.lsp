@@ -120,6 +120,7 @@
     ("H" "P-熱水-管" 6  "熱水" "PVC" nil)
     ("D" "P-排水-管" 34 "排水" "CI"  "RING")
     ("S" "P-汙水-管" 32 "汙水" "CI"  "RING")
+    ("Y" "P-雨水-管" 150 "雨水" "CI" "RING")   ; 雨水若用 PVC，改成 "PVC" nil
     ("V" "P-通氣-管" 3  "通氣" "PVC" nil)
     ("F" "P-消防-管" 1  "消防" "STL" "GROOVE")
     ("R" "P-冷媒-管" 4  "冷媒" "PVC" nil)))
@@ -138,7 +139,7 @@
 (if (not *DP-SCALE*) (setq *DP-SCALE* 50.0))  ; 出圖比例 1/50
 (if (not *DP-TXH*)   (setq *DP-TXH* 2.5))     ; 出圖後字高 mm
 (if (not *DP-SLOPE*) (setq *DP-SLOPE* 100))   ; 排水坡度預設 1/100
-(setq *DP-PFX-D* "BOP")  ; 排水、汙水高程前綴（管底）
+(setq *DP-PFX-D* "BOP")  ; 排水、汙水、雨水高程前綴（管底）
 (setq *DP-PFX*   "CL")   ; 其他系統高程前綴（管中心）；若也標管底改成 "BOP"
 
 ;; ================= 共用函式 =================
@@ -378,8 +379,8 @@
 (defun DP:sizestr (size)
   (cond ((cdr (assoc size *DP-INCH*))) (T (strcat (itoa size) "A"))))
 
-;; 有坡度的系統（排水、汙水）
-(defun DP:sloped (sys) (member sys '("D" "S")))
+;; 有坡度的系統（排水、汙水、雨水）
+(defun DP:sloped (sys) (member sys '("D" "S" "Y")))
 (defun DP:pfx (sys) (if (DP:sloped sys) *DP-PFX-D* *DP-PFX*))
 
 (defun DP:elstr (v) (strcat (if (minusp v) "-" "+") (rtos (abs v) 2 0)))
@@ -471,8 +472,8 @@
 
   ;; 系統
   (if (not *DP-last-sys*) (setq *DP-last-sys* "W"))
-  (initget "W H D S V F R")
-  (setq sys (getkword (strcat "\n系統 [給水(W)/熱水(H)/排水(D)/汙水(S)/通氣(V)/消防(F)/冷媒(R)] <"
+  (initget "W H D S Y V F R")
+  (setq sys (getkword (strcat "\n系統 [給水(W)/熱水(H)/排水(D)/汙水(S)/雨水(Y)/通氣(V)/消防(F)/冷媒(R)] <"
                               *DP-last-sys* ">: ")))
   (if (not sys) (setq sys *DP-last-sys*))
   (setq *DP-last-sys* sys sysdat (assoc sys *DP-SYS*))
