@@ -146,8 +146,8 @@
 (if (not *DP-SCALE*) (setq *DP-SCALE* 50.0))  ; 出圖比例 1/50
 (if (not *DP-TXH*)   (setq *DP-TXH* 2.5))     ; 出圖後字高 mm
 (if (not *DP-SLOPE*) (setq *DP-SLOPE* 100))   ; 排水坡度預設 1/100
-(setq *DP-PFX-D* "BOP")  ; 排水、汙水、雨水高程前綴（管底）
-(setq *DP-PFX*   "CL")   ; 其他系統高程前綴（管中心）；若也標管底改成 "BOP"
+(setq *DP-PFX-D* "BOP")  ; 排水、汙水、雨水、通氣、冷熱水高程前綴（管底）
+(setq *DP-PFX*   "CL")   ; 消防、冷媒高程前綴（管中心）
 
 ;; ================= 共用函式 =================
 (defun DP:layer (name color plot / doc lays lay lin)
@@ -389,7 +389,7 @@
 
 ;; 有坡度的系統（排水、汙水、雨水）
 (defun DP:sloped (sys) (member sys '("D" "S" "Y")))
-(defun DP:pfx (sys) (if (or (DP:sloped sys) (= sys "V")) *DP-PFX-D* *DP-PFX*))
+(defun DP:pfx (sys) (if (or (DP:sloped sys) (member sys (quote ("V" "W" "H")))) *DP-PFX-D* *DP-PFX*))
 
 (defun DP:elstr (v) (strcat (if (minusp v) "-" "+") (rtos (abs v) 2 0)))
 
