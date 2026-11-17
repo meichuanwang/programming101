@@ -5,6 +5,8 @@
 ;;  DPR    彎頭半徑
 ;;  DPJ    手動加接頭
 ;;  DPJS   接頭設定
+;;  DPL    補標註（點中心線）
+;;  DPLS   標註設定（開關、比例、字高）
 ;;  DPX    交叉自動斷線
 ;;  DPXS   斷線設定
 ;;  OUTSRC 另存外包用檔案（刪除中心線）
@@ -130,6 +132,14 @@
 (setq *DP-CL* "P-中心線")
 (if (not *DP-elbow*) (setq *DP-elbow* 0))
 
+;; ================= 標註設定 =================
+(if (not *DP-LBL*)   (setq *DP-LBL* "Y"))     ; 畫管時自動標註 Y/N
+(if (not *DP-SCALE*) (setq *DP-SCALE* 50.0))  ; 出圖比例 1/50
+(if (not *DP-TXH*)   (setq *DP-TXH* 2.5))     ; 出圖後字高 mm
+(if (not *DP-SLOPE*) (setq *DP-SLOPE* 100))   ; 排水坡度預設 1/100
+(setq *DP-PFX-D* "FL")   ; 排水高程前綴（管底）
+(setq *DP-PFX*   "CL")   ; 其他系統高程前綴（管中心）
+
 ;; ================= 共用函式 =================
 (defun DP:layer (name color plot / doc lays lay lin)
   (setq doc  (vla-get-ActiveDocument (vlax-get-acad-object))
@@ -158,11 +168,19 @@
 (defun DP:step  (jt) (if (= jt "RING") (nth 1 *DP-RING*) (nth 0 *DP-GRV*)))
 (defun DP:endon (jt) (if (= jt "RING") (nth 3 *DP-RING*) (nth 2 *DP-GRV*)))
 
-;; 讀中心線上記錄的 (系統 外徑 管徑)
+;; 讀中心線上記錄的 (系統 外徑 管徑 高程 坡度)；舊管沒有高程、坡度
 (defun DP:xd (ent / xd)
   (if (setq xd (cdr (assoc -3 (entget ent '("DPPIPE")))))
-    (progn (setq xd (cdr (car xd)))
-           (list (cdr (assoc 1000 xd)) (cdr (assoc 1040 xd)) (cdr (assoc 1070 xd))))))
+    (mapcar 'cdr (cdr (car xd)))))
+
+;; 寫入中心線資料
+(defun DP:setxd (ent sys od size el sl)
+  (regapp "DPPIPE")
+  (entmod (append (entget ent)
+                  (list (list -3 (append (list "DPPIPE" (cons 1000 sys)
+                                               (cons 1040 od) (cons 1070 size))
+                                         (if el (list (cons 1040 el)))
+                                         (if (and el sl) (list (cons 1071 sl)))))))))
 
 ;; 接頭尺寸 (橫寬 沿管長)；nil = 不加接頭
 (defun DP:jsize (jt od size / r)
@@ -348,7 +366,84 @@
     (if (= jt "GROOVE") (princ "\n50A 以下視為牙接，不加機接。"))))
 
 ;; ================= DP 主程式 =================
-(defun c:DP ( / *error* oldlay oldecho oldrad sys sysdat size od lastent ent obj d r stee etee)
+;; ================= 標註 =================
+(defun DP:p3 (p) (list (car p) (cadr p) 0.0))
+(defun DP:elstr (v) (strcat (if (minusp v) "-" "+") (rtos (abs v) 2 0)))
+
+;; 讓文字不會倒著讀：回傳 (旋轉角 是否翻轉)
+(defun DP:readable (a)
+  (setq a (rem (+ a (* 4 pi)) (* 2 pi)))
+  (if (and (> a (+ (/ pi 2.0) 1e-6)) (<= a (+ (* 1.5 pi) 1e-6)))
+    (list (+ a pi) T)
+    (list a nil)))
+
+;; 寫文字：v = 垂直對齊（1 = 底部置中，2 = 正中）
+(defun DP:text (pt rot str h lay v)
+  (entmake (list '(0 . "TEXT") (cons 8 lay) (cons 7 (getvar "TEXTSTYLE"))
+                 (cons 10 (DP:p3 pt)) (cons 11 (DP:p3 pt)) (cons 40 h)
+                 (cons 1 str) (cons 50 rot) '(72 . 1) (cons 73 v))))
+
+;; 問高程（每個系統記住上次的值）
+(defun DP:getel (sys / pfx def v)
+  (setq pfx (if (= sys "D") *DP-PFX-D* *DP-PFX*)
+        def (cdr (assoc sys *DP-EL*)))
+  (if def
+    (setq v (getreal (strcat "\n" pfx " 高程 mm（離地，排水為起點）<" (rtos def 2 0) ">: ")))
+    (progn (initget 1)
+           (setq v (getreal (strcat "\n" pfx " 高程 mm（離地，排水為起點）: ")))))
+  (if (not v) (setq v def))
+  (setq *DP-EL* (cons (cons sys v) (vl-remove-if '(lambda (x) (= (car x) sys)) *DP-EL*)))
+  v)
+
+(defun DP:getslope ( / v)
+  (initget 6)
+  (setq v (getint (strcat "\n坡度 1/ <" (itoa *DP-SLOPE*) ">: ")))
+  (if v (setq *DP-SLOPE* v))
+  *DP-SLOPE*)
+
+;; 標註一支管
+;;   一般：「給水 25A CL+2700」標在最長直管段中間
+;;   排水：「排水 100A i=1/100 →」，起點、終點各標 FL（終點依坡度算）
+(defun DP:label (ent / mx sysdat od el sl lay h vs i v0 v1 len blen best
+                       ang rr rot flip mid txt tl d pt a)
+  (setq mx (DP:xd ent) sysdat (assoc (car mx) *DP-SYS*)
+        od (nth 1 mx) el (nth 3 mx) sl (nth 4 mx)
+        lay (vl-string-subst "-標註" "-管" (cadr sysdat))
+        h (* *DP-TXH* *DP-SCALE*))
+  (DP:layer lay (caddr sysdat) T)
+  ;; 找最長的直管段
+  (setq vs (DP:verts ent) i 0 blen 0.0)
+  (while (< i (1- (length vs)))
+    (setq v0 (nth i vs) v1 (nth (1+ i) vs))
+    (if (and (equal (cadr v0) 0.0 1e-9)
+             (> (setq len (distance (car v0) (car v1))) blen))
+      (setq blen len best (list (car v0) (car v1))))
+    (setq i (1+ i)))
+  (if best
+    (progn
+      (setq ang  (angle (car best) (cadr best))
+            rr   (DP:readable ang) rot (car rr) flip (cadr rr)
+            mid  (polar (car best) ang (/ blen 2.0))
+            txt  (strcat (nth 3 sysdat) " " (itoa (nth 2 mx)) "A"))
+      (setq txt (if sl
+                  (strcat txt " i=1/" (itoa sl) " " (if flip "←" "→"))
+                  (strcat txt " " *DP-PFX* (DP:elstr el))))
+      ;; 管線上方
+      (DP:text (polar mid (+ rot (/ pi 2.0)) (+ (/ od 2.0) (* h 0.5))) rot txt h lay 1)
+      ;; 排水：起點、終點 FL（管線下方）
+      (if sl
+        (progn
+          (setq tl (vlax-curve-getDistAtParam ent (vlax-curve-getEndParam ent))
+                d  (min (* tl 0.15) (* h 6.0)))
+          (foreach pr (list (list d el) (list (- tl d) (- el (/ tl sl))))
+            (setq pt (vlax-curve-getPointAtDist ent (car pr))
+                  a  (angle '(0 0 0)
+                       (vlax-curve-getFirstDeriv ent (vlax-curve-getParamAtPoint ent pt)))
+                  rr (DP:readable a))
+            (DP:text (polar pt (- (car rr) (/ pi 2.0)) (+ (/ od 2.0) h))
+                     (car rr) (strcat *DP-PFX-D* (DP:elstr (cadr pr))) h lay 2))))))))
+
+(defun c:DP ( / *error* oldlay oldecho oldrad sys sysdat size od lastent ent obj d r stee etee el sl)
   (defun *error* (msg)
     (if oldlay  (setvar "CLAYER" oldlay))
     (if oldrad  (setvar "FILLETRAD" oldrad))
@@ -381,6 +476,12 @@
            (setq od (getdist (strcat "\n表中沒有 " (itoa size) "A，請輸入外徑 (mm)：")))))
   (setq *DP-last-size* size)
 
+  ;; 高程、坡度（自動標註開啟時才問）
+  (if (= *DP-LBL* "Y")
+    (progn
+      (setq el (DP:getel sys))
+      (if (= sys "D") (setq sl (DP:getslope)))))
+
   ;; 圖層
   (DP:layer *DP-CL* 8 nil)
   (DP:layer (cadr sysdat) (caddr sysdat) T)
@@ -408,11 +509,8 @@
         (progn (setvar "FILLETRAD" (* *DP-elbow* od))
                (command "_.FILLET" "_P" ent)
                (setvar "FILLETRAD" oldrad)))
-      ;; 記錄系統、外徑、管徑
-      (regapp "DPPIPE")
-      (entmod (append (entget ent)
-                      (list (list -3 (list "DPPIPE" (cons 1000 sys)
-                                           (cons 1040 od) (cons 1070 size))))))
+      ;; 記錄系統、外徑、管徑、高程、坡度
+      (DP:setxd ent sys od size el sl)
       ;; 偏移兩側管線
       (setq obj (vlax-ename->vla-object ent) d (/ od 2.0))
       (foreach s (list d (- d))
@@ -429,11 +527,40 @@
                              (mapcar '- (vlax-curve-getFirstDeriv ent (vlax-curve-getEndParam ent)))))
           (if (or stee etee) (princ "\n偵測到三通，已在主管加接頭。"))
           (DP:joints ent od size sysdat stee etee)))
+      ;; 標註
+      (if el (DP:label ent))
       (princ (strcat "\n完成：" (nth 3 sysdat) " " (itoa size) "A")))
     (princ "\n沒有畫出路徑，已取消。"))
 
   (command "_.UNDO" "_End")
   (setvar "CMDECHO" oldecho)
+  (princ))
+
+;; ================= DPL 補標註（舊管或改過的管） =================
+(defun c:DPL ( / sel ent mx el sl)
+  (while (setq sel (entsel "\n點管的【中心線】加標註（Enter 結束）："))
+    (setq ent (car sel))
+    (if (not (setq mx (DP:xd ent)))
+      (princ "\n這條不是 DP 畫的中心線，請點中心線。")
+      (progn
+        (setq el (nth 3 mx) sl (nth 4 mx))
+        (if (not el)
+          (progn
+            (setq el (DP:getel (car mx)))
+            (if (= (car mx) "D") (setq sl (DP:getslope)))
+            (DP:setxd ent (nth 0 mx) (nth 1 mx) (nth 2 mx) el sl)))
+        (DP:label ent)
+        (princ "\n已標註。"))))
+  (princ))
+
+;; ================= DPLS 標註設定 =================
+(defun c:DPLS ( / k)
+  (initget "Y N")
+  (setq k (getkword (strcat "\n畫管時自動標註 [是(Y)/否(N)] <" *DP-LBL* ">: ")))
+  (if k (setq *DP-LBL* k))
+  (setq *DP-SCALE* (DP:real "\n出圖比例 1/" *DP-SCALE*)
+        *DP-TXH*   (DP:real "\n出圖字高 mm" *DP-TXH*))
+  (princ (strcat "\n圖面字高 = " (rtos (* *DP-SCALE* *DP-TXH*) 2 0)))
   (princ))
 
 ;; ================= DPR 彎頭半徑 =================
@@ -721,5 +848,5 @@
   (princ)
 )
 
-(princ "\n已載入 MEPTOOLS：DP / DPR / DPJ / DPJS / DPX / DPXS / OUTSRC")
+(princ "\n已載入 MEPTOOLS：DP / DPR / DPJ / DPJS / DPL / DPLS / DPX / DPXS / OUTSRC")
 (princ)
