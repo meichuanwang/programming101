@@ -150,6 +150,10 @@
 (setq *DP-CL* "P-中心線")
 (if (not *DP-elbow*) (setq *DP-elbow* 0))
 
+;; ================= 保溫 =================
+;; (系統代號 . 保溫厚度mm)；例如熱水也要畫保溫，加一項 ("H" . 10.0)
+(setq *DP-INS* '(("R" . 10.0)))
+
 ;; ================= 標註設定 =================
 (if (not *DP-LBL*)   (setq *DP-LBL* "Y"))     ; 畫管時自動標註 Y/N
 (if (not *DP-SCALE*) (setq *DP-SCALE* 50.0))  ; 出圖比例 1/50
@@ -444,7 +448,8 @@
 (defun DP:label (ent / mx sysdat od el sl lay h vs i v0 v1 len blen best
                        ang rr rot flip mid txt tl d pt a)
   (setq mx (DP:xd ent) sysdat (assoc (car mx) *DP-SYS*)
-        od (nth 1 mx) el (nth 3 mx) sl (nth 4 mx)
+        od (+ (nth 1 mx) (* 2.0 (cond ((cdr (assoc (car mx) *DP-INS*))) (T 0.0))))  ; 含保溫，文字才不會壓到
+        el (nth 3 mx) sl (nth 4 mx)
         lay (vl-string-subst "-標註" "-管" (cadr sysdat))
         h (* *DP-TXH* *DP-SCALE*))
   (DP:layer lay (caddr sysdat) T)
@@ -479,7 +484,7 @@
           (DP:text (polar pt (- (car rr) (/ pi 2.0)) (+ (/ od 2.0) h))
                    (car rr) (strcat (DP:pfx (car mx)) (DP:elstr (- el (/ tl sl)))) h lay 2))))))
 
-(defun c:DP ( / *error* oldlay oldecho oldrad sys sysdat size od lastent ent obj d r stee etee el sl)
+(defun c:DP ( / *error* oldlay oldecho oldrad sys sysdat size od lastent ent obj d r stee etee el sl ins)
   (defun *error* (msg)
     (if oldlay  (setvar "CLAYER" oldlay))
     (if oldrad  (setvar "FILLETRAD" oldrad))
@@ -556,6 +561,15 @@
         (if (not (vl-catch-all-error-p r))
           (foreach o (vlax-safearray->list (vlax-variant-value r))
             (vla-put-Layer o (cadr sysdat)))))
+      ;; 保溫外緣
+      (if (setq ins (cdr (assoc sys *DP-INS*)))
+        (progn
+          (DP:layer (vl-string-subst "-保溫" "-管" (cadr sysdat)) (caddr sysdat) T)
+          (foreach s (list (+ d ins) (- (+ d ins)))
+            (setq r (vl-catch-all-apply 'vla-Offset (list obj s)))
+            (if (not (vl-catch-all-error-p r))
+              (foreach o (vlax-safearray->list (vlax-variant-value r))
+                (vla-put-Layer o (vl-string-subst "-保溫" "-管" (cadr sysdat))))))))
       ;; 三通判斷 + 接頭
       (if (nth 5 sysdat)
         (progn
